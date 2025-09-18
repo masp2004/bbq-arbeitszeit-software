@@ -2,7 +2,10 @@ import datetime as dt
 import pytest
 
 
+
 # --- Smoke test to keep CI green while specs are built ---
+
+
 def test_smoke():
     assert True
 
@@ -11,7 +14,8 @@ def test_smoke():
 # Die folgenden Tests sind als "Spezifikation" geschrieben.
 # Sie erwarten Funktionen/Klassen, die du später in deinem Code implementierst
 # (z. B. in einem Modul wie `bbq/domain.py` oder `src/bbq/domain.py`).
-# Bis zur Implementierung sind sie als xfail markiert, damit die Pipeline nicht rot wird.
+# Bis zur Implementierung sind sie als xfail markiert, damit die Pipeline
+# nicht rot wird.
 # Entferne die xfail-Markierungen, sobald die Funktionen existieren.
 
 
@@ -72,7 +76,8 @@ def test_flex_time_accumulates_month_quarter_year():
     extra = _shift(2025, 1, 15, 20, 0, 22, 0)
 
     res = summarize_flex_time(
-        shifts=week + [extra], weekly_target_hours=weekly_target
+        shifts=week + [extra],
+        weekly_target_hours=weekly_target,
     )
     assert res["month"]["hours"] == 2.0
     assert res["quarter"]["hours"] >= 2.0
@@ -99,3 +104,4 @@ def test_ampel_logic_thresholds_from_settings():
     assert ampel_status(+5.0, settings) == "green"
     assert ampel_status(+15.0, settings) == "yellow"
     assert ampel_status(+25.0, settings) == "red"
+
