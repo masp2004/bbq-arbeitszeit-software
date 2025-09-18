@@ -18,6 +18,7 @@ def add(a, b):
 class RepairModel:
     '''Model for predicting repairs based on sales and history.'''
 
+
     def __init__(self, data):
         self.data = data  # Variablen im snake_case
 
