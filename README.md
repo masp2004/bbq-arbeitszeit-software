@@ -34,18 +34,6 @@ Wir verwenden eine angepasste Gitflow-Strategie, um die Zusammenarbeit in einem 
 
 ## Pull-Request-Prozess
 
-Um Änderungen in den `main`- oder `develop`-Branch zu integrieren, folgen Sie diesem Prozess:
-
-1. Erstellen Sie einen Feature-Branch: `git checkout -b feature/<beschreibung> develop`
-2. Committen Sie Ihre Änderungen mit klaren Nachrichten: `git commit -m "Add Gleitzeitberechnung"`
-3. Führen Sie Tests und Linting lokal aus: `pytest tests/ && flake8 src/ tests/`
-4. Formatieren Sie den Code mit `autopep8`: `autopep8 --in-place --aggressive src/ tests/`
-5. Pushen Sie den Branch: `git push origin feature/<beschreibung>`
-6. Erstellen Sie einen Pull Request (PR) in GitHub gegen den `develop`-Branch (oder `main` für Hotfixes).
-7. Weisen Sie mindestens einen Reviewer zu (zwei für `main`).
-8. Beheben Sie Feedback und klären Sie Diskussionen im PR.
-9. Der PR wird gemerged, sobald alle Status-Checks (`lint`, `test`) bestanden sind und die Reviews abgeschlossen sind.
-
 Detaillierte Anleitungen finden Sie im GitHub-Wiki des Repositories.
 
 ## Issues und Discussions
