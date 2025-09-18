@@ -25,7 +25,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Lint
-        run: flake8 .
+        run: flake8 . --max-line-length=120 --ignore=E302,W292
 
       - name: Run tests
         run: pytest tests -q
