@@ -1,9 +1,11 @@
 import datetime as dt
 import pytest
 
+
 # --- Smoke test to keep CI green while specs are built ---
 def test_smoke():
     assert True
+
 
 # NOTE:
 # Die folgenden Tests sind als "Spezifikation" geschrieben.
@@ -12,11 +14,13 @@ def test_smoke():
 # Bis zur Implementierung sind sie als xfail markiert, damit die Pipeline nicht rot wird.
 # Entferne die xfail-Markierungen, sobald die Funktionen existieren.
 
+
 def _shift(y, m, d, sh, sm, eh, em):
     return (
         dt.datetime(y, m, d, sh, sm),  # start
         dt.datetime(y, m, d, eh, em),  # end
     )
+
 
 @pytest.mark.xfail(reason="Worktime-Funktionen noch nicht implementiert", strict=False)
 def test_filter_time_window_counts_only_6_to_22():
@@ -29,6 +33,7 @@ def test_filter_time_window_counts_only_6_to_22():
     assert count_operational_hours([s2]) == 1.0
     assert count_operational_hours([s1, s2]) == 2.0
 
+
 @pytest.mark.xfail(reason="ArbZG-Tageslimit noch nicht implementiert", strict=False)
 def test_daily_max_10h_violation_detected():
     from bbq.domain import detect_daily_limit_violations  # zu implementieren
@@ -38,6 +43,7 @@ def test_daily_max_10h_violation_detected():
     violations = detect_daily_limit_violations([s1, s2])
     assert violations
     assert violations[0]["date"] == dt.date(2025, 9, 17)
+
 
 @pytest.mark.xfail(reason="Ruhezeitprüfung (11h) noch nicht implementiert", strict=False)
 def test_min_rest_period_11h_between_shifts():
@@ -49,6 +55,7 @@ def test_min_rest_period_11h_between_shifts():
     ok, hours = check_min_rest_period(day1[1], day2[0])
     assert not ok
     assert hours == 10
+
 
 @pytest.mark.xfail(reason="Gleitzeit-Berechnung noch nicht implementiert", strict=False)
 def test_flex_time_accumulates_month_quarter_year():
@@ -64,10 +71,13 @@ def test_flex_time_accumulates_month_quarter_year():
     ]
     extra = _shift(2025, 1, 15, 20, 0, 22, 0)
 
-    res = summarize_flex_time(shifts=week + [extra], weekly_target_hours=weekly_target)
+    res = summarize_flex_time(
+        shifts=week + [extra], weekly_target_hours=weekly_target
+    )
     assert res["month"]["hours"] == 2.0
     assert res["quarter"]["hours"] >= 2.0
     assert res["year"]["hours"] >= 2.0
+
 
 @pytest.mark.xfail(reason="Frühwarnungen noch nicht implementiert", strict=False)
 def test_warning_on_impending_violation():
@@ -75,10 +85,11 @@ def test_warning_on_impending_violation():
 
     planned = [
         _shift(2025, 9, 20, 6, 0, 12, 0),     # 6h
-        _shift(2025, 9, 20, 13, 0, 18, 30),   # 5.5h => 11.5h => Warnung
+        _shift(2025, 9, 20, 13, 0, 18, 30),  # 5.5h => 11.5h => Warnung
     ]
     warnings = simulate_and_warn(planned)
     assert warnings
+
 
 @pytest.mark.xfail(reason="Ampellogik noch nicht implementiert", strict=False)
 def test_ampel_logic_thresholds_from_settings():
