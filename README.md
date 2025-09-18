@@ -57,8 +57,8 @@ Die vollständige Dokumentation befindet sich im GitHub-Wiki und umfasst:
 
 1. Klonen Sie das Repository:
    ```bash
-   git clone https://github.com/<organisation>/arbeitszeit_software.git
-   cd arbeitszeit_software
+   git clone https://github.com/bbq-arbeitszeit-software.git
+   cd bbq-arbeitzeit-software
    ```
 2. Installieren Sie Python 3.10 (kompatibel mit Windows 10/11).
 3. Erstellen Sie eine virtuelle Umgebung:
@@ -91,5 +91,3 @@ Die vollständige Dokumentation befindet sich im GitHub-Wiki und umfasst:
 ## Kontakt
 
 Für Fragen wenden Sie sich an das Entwicklungsteam über GitHub Discussions oder kontaktieren Sie den Projektleiter Aurelia oder Stellvertrender Projektleiter Mika. Für technische Details oder Zugriffsanfragen wenden Sie sich an den Repository-Administrator Marvin.
-
-</xaiArtifact>
