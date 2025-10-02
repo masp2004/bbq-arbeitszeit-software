@@ -104,7 +104,7 @@ class ModellTrackTime():
             else:
                 i += 1  # nur einen weiterspringen (Datum unterschiedlich)
 
-        tägliche_arbeitszeit = timedelta( hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
+        tägliche_arbeitszeit = timedelta(hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
 
         arbeitstage = {datum: zeit - tägliche_arbeitszeit for datum, zeit in arbeitstage.items()}
         for e in benutzte_einträge:
