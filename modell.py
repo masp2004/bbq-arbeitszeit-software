@@ -193,11 +193,11 @@ class ModellLogin():
 
         if nutzer is None:
             self.anmeldung_rückmeldung = "Passwort oder Nutzername falsch"
-
+            return False
         elif nutzer.password == self.anmeldung_passwort:
             self.anmeldung_rückmeldung = "Login erfolgreich"
             self.anmeldung_mitarbeiter_id_validiert = nutzer.mitarbeiter_id
             return True
-
         else:
             self.anmeldung_rückmeldung = "Passwort oder Nutzername falsch"
+            return False
