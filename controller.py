@@ -64,9 +64,9 @@ class Controller():
     #call modell funktions
     def einloggen_button_clicked(self,b):
         self.update_model_login()
-        succes = self.model_login.login()
+        success = self.model_login.login()
         self.update_view_login()
-        if succes:
+        if success:
             self.change_view_main(b=None)
             self.update_model_time_tracking()
             self.update_view_time_tracking()
