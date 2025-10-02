@@ -109,7 +109,7 @@ class ModellTrackTime():
         arbeitstage = {datum: zeit - tägliche_arbeitszeit for datum, zeit in arbeitstage.items()}
         for e in benutzte_einträge:
             e.validiert = True
-            session.commit()
+        session.commit()
 
         gleitzeit_delta = sum(arbeitstage.values(), timedelta())
         gleitzeit_stunden = int(gleitzeit_delta.total_seconds() // 3600)
