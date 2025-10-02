@@ -96,7 +96,7 @@ class Controller():
         self.sm.current = "login"
 
     def change_view_main(self,b):
-        Window.size =(self.main_view.time_tracking_tab_width, self.main_view.time_tracking_tab_heigt)
+        Window.size =(self.main_view.time_tracking_tab_width, self.main_view.time_tracking_tab_height)
         self.sm.current = "main"
 
     def show_date_picker(self, instance, focus):
