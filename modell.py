@@ -82,7 +82,7 @@ class ModellTrackTime():
         stmt = select(Zeiteintrag).where((Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) & (Zeiteintrag.validiert == 0)).order_by(Zeiteintrag.datum, Zeiteintrag.zeit)
         einträge = session.scalars(stmt).all()
 
-        arbeitstage ={}
+        arbeitstage = {}
         benutzte_einträge = []
 
 
