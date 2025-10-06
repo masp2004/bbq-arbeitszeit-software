@@ -82,7 +82,7 @@ class ModellTrackTime():
         stmt = select(Zeiteintrag).where((Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) & (Zeiteintrag.validiert == 0)).order_by(Zeiteintrag.datum, Zeiteintrag.zeit)
         einträge = session.scalars(stmt).all()
 
-        arbeitstage ={}
+        arbeitstage = {}
         benutzte_einträge = []
 
 
@@ -104,12 +104,12 @@ class ModellTrackTime():
             else:
                 i += 1  # nur einen weiterspringen (Datum unterschiedlich)
 
-        tägliche_arbeitszeit = timedelta( hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
+        tägliche_arbeitszeit = timedelta(hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
 
         arbeitstage = {datum: zeit - tägliche_arbeitszeit for datum, zeit in arbeitstage.items()}
         for e in benutzte_einträge:
             e.validiert = True
-            session.commit()
+        session.commit()
 
         gleitzeit_delta = sum(arbeitstage.values(), timedelta())
         gleitzeit_stunden = int(gleitzeit_delta.total_seconds() // 3600)
@@ -193,11 +193,11 @@ class ModellLogin():
 
         if nutzer is None:
             self.anmeldung_rückmeldung = "Passwort oder Nutzername falsch"
-
+            return False
         elif nutzer.password == self.anmeldung_passwort:
             self.anmeldung_rückmeldung = "Login erfolgreich"
             self.anmeldung_mitarbeiter_id_validiert = nutzer.mitarbeiter_id
             return True
-
         else:
             self.anmeldung_rückmeldung = "Passwort oder Nutzername falsch"
+            return False
