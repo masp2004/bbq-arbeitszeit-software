@@ -9,7 +9,8 @@ cursor.executescript('''
             password VARCHAR(15) NOT NULL,
             vertragliche_wochenstunden INTEGER NOT NULL,
             geburtsdatum DATE NOT NULL,   
-            gleitzeit  INTEGER NOT NULL DEFAULT 0
+            gleitzeit  DECIMAL(4,2) NOT NULL DEFAULT 0,
+            letzter_login DATE NOT NULL
         );
         CREATE TABLE IF NOT EXISTS zeiteinträge (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -17,7 +18,14 @@ cursor.executescript('''
                 zeit TIME NOT NULL,
                 datum DATE NOT NULL,
                 validiert BOOLEAN  NOT NULL DEFAULT 0      
-            );   
+            ); 
+        CREATE TABLE IF NOT EXISTS benachrichtigungen (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mitarbeiter_id INTEGER NOT NULL REFERENCES users(mitarbeiter_id),
+                benachrichtigungs_code INTEGER NOT NULL, 
+                datum DATE    
+            );         
+                  
     ''')
 conn.commit()
 conn.close()
