@@ -39,6 +39,11 @@ class Controller():
         self.main_view.stempel_button.bind(on_press=self.stempel_button_clicked)
         self.main_view.nachtragen_button.bind(on_press=self.stempel_nachtragen_button_clickes)
 
+        self.main_view.month_calendar.prev_btn.bind(on_release=self.prev_button_clicked)
+        self.main_view.month_calendar.next_btn.bind(on_release=self.next_button_clicked)
+
+        self.main_view.month_calendar.day_selected_callback = self.day_selected
+
      #updates   
     def update_model_login(self):
         self.model_login.neuer_nutzer_name = self.register_view.reg_username_input.text
@@ -82,9 +87,9 @@ class Controller():
     #call modell funktions
     def einloggen_button_clicked(self,b):
         self.update_model_login()
-        succes = self.model_login.login()
+        success = self.model_login.login()
         self.update_view_login()
-        if succes:
+        if success:
             self.change_view_main(b=None)
             self.update_model_time_tracking()
             self.model_track_time.checke_arbeitstage()
@@ -108,8 +113,12 @@ class Controller():
         self.model_track_time.manueller_stempel_hinzufügen()
         self.update_view_time_tracking()
 
-        
+    #call view functions
+    def prev_button_clicked(self, b):
+        self.main_view.month_calendar.change_month(-1)
 
+    def next_button_clicked(self, b):
+        self.main_view.month_calendar.change_month(1)
 
     #change views
     def change_view_register(self,b):
@@ -121,10 +130,12 @@ class Controller():
         self.sm.current = "login"
 
     def change_view_main(self,b):
-        Window.size =(self.main_view.time_tracking_tab_width, self.main_view.time_tracking_tab_heigt)
+        Window.size =(self.main_view.time_tracking_tab_width, self.main_view.time_tracking_tab_height)
         self.sm.current = "main"
 
     def show_date_picker(self, instance, focus):
+        '''Öffnet den Kalender zur Datumsauswahl'''
+
         if focus:
             if instance == self.register_view.reg_geburtsdatum:
                 self.register_view.date_picker.open()
@@ -151,6 +162,22 @@ class Controller():
         self.main_view.time_input.text = time.strftime("%H:%M")
     
     
+    def day_selected(self, date):
+        ''' Wird aufgerufen, wenn ein Tag im Kalender ausgewählt wird '''
+
+        if hasattr(self.main_view.month_calendar, "_edit_callback"):
+            self.main_view.month_calendar.edit_btn.unbind(on_release=self.main_view.month_calendar._edit_callback)
+
+        def _callback(instance):
+            popup = self.main_view.month_calendar.open_edit_popup(date)
+            popup.add_btn.bind(on_release=lambda instance: self.add_entry_in_popup(popup))
+
+        self.main_view.month_calendar._edit_callback = _callback
+        self.main_view.month_calendar.edit_btn.bind(on_release=self.main_view.month_calendar._edit_callback)
+
+    def add_entry_in_popup(self, popup):
+        entry_row, delete_btn = popup.add_entry()
+        delete_btn.bind(on_release=lambda instance, row=entry_row: popup.entries_box.remove_widget(row))
 
     #getter
     def get_view_manager(self):
