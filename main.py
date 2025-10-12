@@ -16,3 +16,4 @@ class TimeTrackingApp(MDApp):
 
 if __name__ == "__main__":
     TimeTrackingApp().run()
+ 

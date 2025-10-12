@@ -206,19 +206,7 @@ class MainView(Screen):
         self.reihe_1.add_widget(self.anzeige_gleitzeit_wert_label)
         self.time_tracking_layout.add_widget(self.reihe_1)
 
-        # --- Testfelder sauber gruppieren ---
-        self.test_labels_layout = BoxLayout(orientation='vertical', spacing=10, size_hint_y=None)
-        self.test_stempel = Label(
-            text="", size_hint=(None, None), size=(450, 40),
-            text_size=(450, 40), halign="left", valign="middle"
-        )
-        self.test_arbeitstage = Label(
-            text="", size_hint=(None, None), size=(450, 40),
-            text_size=(450, 40), halign="left", valign="middle"
-        )
-        self.test_labels_layout.add_widget(self.test_stempel)
-        self.test_labels_layout.add_widget(self.test_arbeitstage)
-        self.time_tracking_layout.add_widget(self.test_labels_layout)
+
 
         # --- Horizontale Buttons oder weitere Optionen (optional) ---
         self.time_tracking_horizontal_layout = BoxLayout(orientation='horizontal', spacing=15, size_hint_y=None, height=40)
@@ -331,17 +319,7 @@ class MainView(Screen):
         scroll_view.add_widget(self.benachrichtigungen_grid)
         main_layout.add_widget(scroll_view)
 
-        # --- Beispiel: Button zum Testen (optional) ---
-        self.test_benachrichtigung_button = Button(
-            text="Test-Benachrichtigung hinzufügen",
-            size_hint=(None, None),
-            size=(300, 40)
-        )
-        self.test_benachrichtigung_button.bind(on_press=lambda x: self.add_benachrichtigung(
-            "Neue Test-Benachrichtigung!",
-            dt.now().strftime("%d.%m.%Y %H:%M")
-        ))
-        main_layout.add_widget(self.test_benachrichtigung_button)
+
 
         self.benachrichtigungen_tab.add_widget(main_layout)
         self.layout.add_widget(self.benachrichtigungen_tab)
@@ -414,7 +392,10 @@ class MainView(Screen):
         self.settings_layout.add_widget(self.repeat_password_input)
         self.change_password_button = Button(text="Passwort ändern", size_hint=(None, None), 
                                              size=(180, 40))
+        self.change_password_feedback = Label(text="", size_hint=(None, None), size=(500, 60),
+                        text_size=(500, None), halign="left", valign="middle")
         self.settings_layout.add_widget(self.change_password_button)
+        self.settings_layout.add_widget(self.change_password_feedback)
 
         self.grid = GridLayout(cols=2, padding=20, spacing=15, size_hint=(0.5, 1))
         self.grid.bind(minimum_height=self.grid.setter('height'))
@@ -562,7 +543,7 @@ class MonthCalendar(BoxLayout):
         # Überschriften
         self.detail_table.add_widget(self.aligned_label(text="Datum", bold=True, color=(0, 0, 0, 1), 
                                                         size_hint_y=None, height=20, halign="left", valign="top"))
-        self.detail_table.add_widget(self.aligned_label(text="Gestempelte Zeiten", bold=True, color=(0, 0, 0, 1), 
+        self.detail_table.add_widget(self.aligned_label(text="  Zeiten", bold=True, color=(0, 0, 0, 1), 
                                                         size_hint_y=None, height=20, halign="left", valign="top"))
         self.detail_table.add_widget(self.aligned_label(text="Gleitzeit", bold=True, color=(0, 0, 0, 1), 
                                                         size_hint_y=None, height=20, halign="left", valign="top"))
@@ -639,6 +620,57 @@ class MonthCalendar(BoxLayout):
 
         if hasattr(self, "day_selected_callback"):
             self.day_selected_callback(date)
+
+    def add_time_row(self, stempelzeit: str):
+        """Fügt eine neue Zeile in die Detail-Tabelle hinzu, basierend auf einer einzelnen Stempelzeit."""
+
+        # Datum automatisch vom aktuellen Kalendertag holen (z. B. vom Label)
+        date_text = ""
+
+        # Nur die Zeit anzeigen (z. B. '08:30')
+        times_text = stempelzeit
+
+        # Gleitzeit bleibt leer (wird evtl. später berechnet)
+        gleitzeit_text = ""
+
+        # Datum
+        date_label = self.aligned_label(
+            text=date_text,
+            color=(0, 0, 0, 1),
+            halign="left",
+            valign="top"
+        )
+
+        # Gestempelte Zeit
+        times_label = self.aligned_label(
+            text=times_text,
+            color=(0, 0, 0, 1),
+            halign="left",
+            valign="top"
+        )
+
+        # Gleitzeit (leer)
+        gleitzeit_label = self.aligned_label(
+            text=gleitzeit_text,
+            color=(0, 0, 0, 1),
+            halign="left",
+            valign="top"
+        )
+
+        # Bearbeiten-Button
+        edit_btn_container = AnchorLayout(anchor_x="right", anchor_y="top")
+        edit_btn = MDIconButton(
+            icon="pencil",
+            theme_text_color="Custom",
+            text_color=(0, 0, 0, 1)
+        )
+        edit_btn_container.add_widget(edit_btn)
+
+        # Widgets in Tabelle einfügen
+        self.detail_table.add_widget(date_label)
+        self.detail_table.add_widget(times_label)
+        self.detail_table.add_widget(gleitzeit_label)
+        self.detail_table.add_widget(edit_btn_container)
 
     def open_edit_popup(self, date):
         """Popup zum Bearbeiten öffnen"""
