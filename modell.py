@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Date, create_engine, select, Time, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Date, create_engine, select, Time, Boolean, ForeignKey, UniqueConstraint
 import sqlalchemy.orm as saorm
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime, date, timedelta
 
 engine = create_engine("sqlite:///system.db", echo=True)
@@ -16,6 +17,8 @@ class mitarbeiter(Base):
     geburtsdatum = Column(Date, nullable=False)
     gleitzeit = Column(Integer, nullable=False, default=0)
     letzter_login = Column(Date, nullable=False)
+    ampel_grün = Column(Integer, nullable=False, default=5)
+    ampel_rot = Column(Integer, nullable=False, default=-5)
 
 
 
@@ -42,6 +45,10 @@ class Benachrichtigungen(Base):
         2.1:"Am",
         2.2:"fehlt ein Stempel, bitte tragen sie diesen nach"
     }
+
+    __table_args__ = (
+        UniqueConstraint("mitarbeiter_id", "benachrichtigungs_code", "datum", name="uq_benachrichtigung_unique"),
+    )
 
     def create_fehlermeldung(self):
 
@@ -79,9 +86,20 @@ class ModellTrackTime():
         self.aktueller_nutzer_name = None
         self.aktueller_nutzer_vertragliche_wochenstunden = None
         self.aktueller_nutzer_gleitzeit = None
+        self.aktueller_nutzer_ampel_rot = None
+        self.aktueller_nutzer_ampel_grün = None
 
         self.manueller_stempel_datum = None
         self.manueller_stempel_uhrzeit = None
+
+        self.zeiteinträge_bestimmtes_datum = None
+        self.bestimmtes_datum = None
+
+        self.neues_passwort = None
+        self.neues_passwort_wiederholung = None
+
+        self.ampel_status = None
+
 
         self.benachrichtigungen = []
 
@@ -89,6 +107,25 @@ class ModellTrackTime():
         self.feedback_manueller_stempel = ""
         self.feedback_arbeitstage = ""
         self.feedback_stempel = ""
+        self.feedback_neues_passwort = ""
+
+    def get_zeiteinträge(self):
+        if self.aktueller_nutzer_id is None or self.bestimmtes_datum is None:
+            return
+        
+        date = datetime.strptime(self.bestimmtes_datum, "%d.%m.%Y").date()
+
+
+        stmt = select(
+            Zeiteintrag
+            ).where(
+                (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id)&(Zeiteintrag.datum == date)
+                ).order_by(
+                    Zeiteintrag.datum, Zeiteintrag.zeit
+                    )
+        einträge = session.scalars(stmt).all()
+        self.zeiteinträge_bestimmtes_datum = einträge
+
 
     def get_user_info(self):
 
@@ -101,12 +138,44 @@ class ModellTrackTime():
             self.aktueller_nutzer_name = nutzer.name
             self.aktueller_nutzer_vertragliche_wochenstunden = nutzer.vertragliche_wochenstunden
             self.aktueller_nutzer_gleitzeit = nutzer.gleitzeit
+            self.aktueller_nutzer_ampel_rot = nutzer.ampel_rot
+            self.aktueller_nutzer_ampel_grün = nutzer.ampel_grün
+
+    def set_ampel_farbe(self):
+        if self.aktueller_nutzer_gleitzeit >= self.aktueller_nutzer_ampel_grün:
+            self.ampel_status = "green"
+
+        elif (self.aktueller_nutzer_gleitzeit < self.aktueller_nutzer_ampel_grün) & (self.aktueller_nutzer_gleitzeit > self.aktueller_nutzer_ampel_rot):
+            self.ampel_status = "yellow"
+    
+        else:
+            self.ampel_status = "red"
+
+
+    def get_messages(self):
 
         stmt = select(Benachrichtigungen).where(Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id)
 
         result = session.execute(stmt).scalars().all()
         self.benachrichtigungen = result
 
+    def update_passwort(self):
+        if not self.neues_passwort:
+            self.feedback_neues_passwort = "Bitte gebe ein passwort ein"
+            return
+        elif  not self.neues_passwort_wiederholung:
+            self.feedback_neues_passwort = "Bitte wiederhole das Passwort"
+            return
+        elif self.neues_passwort != self.neues_passwort_wiederholung:
+            self.feedback_neues_passwort = "Die Passwörter müssen übereinstimmen"
+            return
+        else:
+            stmt = select(mitarbeiter).where(mitarbeiter.mitarbeiter_id == self.aktueller_nutzer_id)
+            nutzer = session.execute(stmt).scalar_one_or_none()
+            nutzer.password = self.neues_passwort
+            session.commit()
+            self.feedback_neues_passwort = "Passwort erfolgreich geändert"
+            return
 
 
 
@@ -137,9 +206,14 @@ class ModellTrackTime():
 
 
     def checke_arbeitstage(self):
+        """Prüft, ob an Arbeitstagen (Mo–Fr) seit letztem Login Stempel fehlen.
+        Für jeden fehlenden Tag wird die tägliche Arbeitszeit von der Gleitzeit abgezogen.
+        Doppelte Benachrichtigungen oder Abzüge werden verhindert.
+        """
         if self.aktueller_nutzer_id is None:
             return
 
+        # Nutzer laden
         stmt = select(mitarbeiter).where(mitarbeiter.mitarbeiter_id == self.aktueller_nutzer_id)
         nutzer = session.execute(stmt).scalar_one_or_none()
         if not nutzer:
@@ -148,11 +222,11 @@ class ModellTrackTime():
         letzter_login = nutzer.letzter_login
         gestern = date.today() - timedelta(days=1)
 
-
+        # Fehlende Arbeitstage ermitteln
         fehlende_tage = []
         tag = letzter_login
         while tag <= gestern:
-            if tag.weekday() < 5:  
+            if tag.weekday() < 5:  # Montag–Freitag
                 stmt = select(Zeiteintrag).where(
                     (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
                     (Zeiteintrag.datum == tag)
@@ -162,16 +236,34 @@ class ModellTrackTime():
                     fehlende_tage.append(tag)
             tag += timedelta(days=1)
 
-        self.feedback_arbeitstage = f"An den Tag / Tagen {fehlende_tage} wurde nicht gestempelt. Es wird für jeden Tag die Tägliche arbeitszeit der Gleitzeit abgezogen"
+        # Tägliche Arbeitszeit berechnen
+        tägliche_arbeitszeit = timedelta(hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
 
+        abgezogene_tage = []
         for tag in fehlende_tage:
-            benachrichtigung = Benachrichtigungen(mitarbeiter_id = self.aktueller_nutzer_id,
-                                                  benachrichtigungs_code = 1,
-                                                  datum = tag)
-            session.add(benachrichtigung)
-            session.commit()
+            # Prüfen, ob es für diesen Tag schon eine Benachrichtigung gibt
+            exists_stmt = select(Benachrichtigungen).where(
+                (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Benachrichtigungen.datum == tag) &
+                (Benachrichtigungen.benachrichtigungs_code == 1)
+            )
+            exists = session.execute(exists_stmt).scalar_one_or_none()
 
-        return fehlende_tage 
+            if not exists:
+                # Nur wenn noch keine Benachrichtigung existiert → Gleitzeit abziehen
+                self.aktueller_nutzer_gleitzeit -= tägliche_arbeitszeit.total_seconds() / 3600
+                nutzer.gleitzeit = self.aktueller_nutzer_gleitzeit
+
+                benachrichtigung = Benachrichtigungen(
+                    mitarbeiter_id=self.aktueller_nutzer_id,
+                    benachrichtigungs_code=1,
+                    datum=tag
+                )
+                session.add(benachrichtigung)
+                session.commit()
+                abgezogene_tage.append(tag)
+
+        return fehlende_tage   
     
     def checke_stempel(self):
         if self.aktueller_nutzer_id is None:
@@ -205,8 +297,11 @@ class ModellTrackTime():
             benachrichtigung = Benachrichtigungen(mitarbeiter_id = self.aktueller_nutzer_id,
                                                   benachrichtigungs_code = 2,
                                                   datum = tag)
-            session.add(benachrichtigung)
-            session.commit()
+            try:
+                session.add(benachrichtigung)
+                session.commit()
+            except IntegrityError:
+                session.rollback()
 
         return ungerade_tage
 
@@ -222,7 +317,7 @@ class ModellTrackTime():
             print(e.datum, e.zeit)
  
         arbeitstage ={}
-        benutzte_einträge = []
+        benutzte_einträge = [] 
 
 
 
@@ -247,7 +342,25 @@ class ModellTrackTime():
 
         tägliche_arbeitszeit = timedelta( hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
 
-        arbeitstage = {datum: zeit - tägliche_arbeitszeit for datum, zeit in arbeitstage.items()}
+        for datum, arbeitszeit in arbeitstage.items():
+             exists_stmt = select(Benachrichtigungen).where(
+                (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Benachrichtigungen.datum == datum) &
+                (Benachrichtigungen.benachrichtigungs_code == 1)
+             )
+             exists = session.execute(exists_stmt).scalar_one_or_none()
+
+             unvalidierte_stmt = select(Zeiteintrag).where(
+                (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Zeiteintrag.datum == datum) &
+                (Zeiteintrag.validiert == 0)
+            )
+             unvalidierte = session.execute(unvalidierte_stmt).scalars().all()
+        
+             if not exists and not unvalidierte: 
+                arbeitstage[datum] -= tägliche_arbeitszeit
+
+
         for e in benutzte_einträge:
             e.validiert = True
             session.commit()

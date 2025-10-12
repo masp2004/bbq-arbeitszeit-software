@@ -3,7 +3,7 @@ from modell import ModellLogin, ModellTrackTime
 from view import LoginView, RegisterView, MainView
 from kivy.core.window import Window
 from kivymd.uix.pickers import MDDatePicker, MDTimePicker
-import datetime
+from datetime import datetime
 
 
 class Controller():
@@ -25,6 +25,7 @@ class Controller():
         self.login_view.change_view_registrieren_button.bind(on_press=self.change_view_register)
         self.register_view.change_view_login_button.bind(on_press=self.change_view_login)
         self.login_view.login_button.bind(on_press=self.einloggen_button_clicked)
+        self.main_view.change_password_button.bind(on_press = self.passwort_ändern_button_clicked)
 
         self.register_view.reg_geburtsdatum.bind(focus=self.show_date_picker)
         self.register_view.date_picker.bind(on_save=self.on_date_selected_register)
@@ -68,19 +69,31 @@ class Controller():
         self.model_track_time.get_user_info()
         self.model_track_time.manueller_stempel_datum = self.main_view.date_input.text
         self.model_track_time.manueller_stempel_uhrzeit = self.main_view.time_input.text
+        self.model_track_time.neues_passwort = self.main_view.new_password_input.text
+        self.model_track_time.neues_passwort_wiederholung = self.main_view.repeat_password_input.text
+        self.model_track_time.bestimmtes_datum = self.main_view.month_calendar.date_label.text
 
 
     def update_view_time_tracking(self):
         self.main_view.anzeige_gleitzeit_wert_label.text = str(self.model_track_time.aktueller_nutzer_gleitzeit)
         self.main_view.nachtrag_feedback.text = self.model_track_time.feedback_manueller_stempel
+        self.main_view.change_password_feedback.text =self.model_track_time.feedback_neues_passwort
+
+        self.main_view.ampel.set_state(state=self.model_track_time.ampel_status)
 
         for nachricht in self.model_track_time.benachrichtigungen:
             self.main_view.add_benachrichtigung(text=nachricht.create_fehlermeldung(),
                                                 datum=nachricht.datum)
 
-        #test
-        self.main_view.test_arbeitstage.text=self.model_track_time.feedback_arbeitstage
-        self.main_view.test_stempel.text=self.model_track_time.feedback_stempel
+
+        if self.model_track_time.zeiteinträge_bestimmtes_datum is not None:    
+            for stempel in self.model_track_time.zeiteinträge_bestimmtes_datum:
+                zeit = stempel.zeit.strftime("%H:%M")
+  
+
+                self.main_view.month_calendar.add_time_row(stempelzeit= zeit)
+
+
 
 
 
@@ -95,6 +108,8 @@ class Controller():
             self.model_track_time.checke_arbeitstage()
             self.model_track_time.checke_stempel()
             self.model_track_time.berechne_gleitzeit()
+            self.model_track_time.get_messages()
+            self.model_track_time.set_ampel_farbe()
             self.update_view_time_tracking()
         
 
@@ -113,12 +128,20 @@ class Controller():
         self.model_track_time.manueller_stempel_hinzufügen()
         self.update_view_time_tracking()
 
+    def passwort_ändern_button_clicked(self,b):
+        self.update_model_time_tracking()
+        self.model_track_time.update_passwort()
+        self.update_view_time_tracking()
+
+        
     #call view functions
     def prev_button_clicked(self, b):
         self.main_view.month_calendar.change_month(-1)
 
     def next_button_clicked(self, b):
         self.main_view.month_calendar.change_month(1)
+
+
 
     #change views
     def change_view_register(self,b):
@@ -134,8 +157,6 @@ class Controller():
         self.sm.current = "main"
 
     def show_date_picker(self, instance, focus):
-        '''Öffnet den Kalender zur Datumsauswahl'''
-
         if focus:
             if instance == self.register_view.reg_geburtsdatum:
                 self.register_view.date_picker.open()
@@ -161,6 +182,7 @@ class Controller():
     def on_time_selected(self, instance, time):
         self.main_view.time_input.text = time.strftime("%H:%M")
     
+
     
     def day_selected(self, date):
         ''' Wird aufgerufen, wenn ein Tag im Kalender ausgewählt wird '''
@@ -174,6 +196,13 @@ class Controller():
 
         self.main_view.month_calendar._edit_callback = _callback
         self.main_view.month_calendar.edit_btn.bind(on_release=self.main_view.month_calendar._edit_callback)
+
+
+        self.update_model_time_tracking()
+        self.model_track_time.get_zeiteinträge()
+        self.update_view_time_tracking()
+
+
 
     def add_entry_in_popup(self, popup):
         entry_row, delete_btn = popup.add_entry()
