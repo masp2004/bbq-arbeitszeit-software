@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, create_engine, select, Time, Boolean, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Date, create_engine, select, Time, Boolean, ForeignKey, UniqueConstraint, CheckConstraint
 import sqlalchemy.orm as saorm
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, date, timedelta
@@ -20,6 +20,14 @@ class mitarbeiter(Base):
     ampel_grün = Column(Integer, nullable=False, default=5)
     ampel_rot = Column(Integer, nullable=False, default=-5)
 
+class Abwesenheit(Base):
+    __tablename__ = "abwesenheiten"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
+    datum = Column(Date, nullable=False)
+    typ = Column(String, CheckConstraint("typ IN ('Urlaub', 'Krankheit', 'Fortbildung', 'Sonstiges')"), nullable=False)
+    genehmigt = Column(Boolean, nullable=False, default=False)
 
 
 class Zeiteintrag(Base):
@@ -43,7 +51,8 @@ class Benachrichtigungen(Base):
         1.1:"An den Tag",
         1.2:"wurde nicht gestempelt. Es wird für jeden Tag die Tägliche arbeitszeit der Gleitzeit abgezogen",
         2.1:"Am",
-        2.2:"fehlt ein Stempel, bitte tragen sie diesen nach"
+        2.2:"fehlt ein Stempel, bitte tragen sie diesen nach",
+        3: ["Achtung, am", "wurden die gesetzlichen Ruhezeiten nicht eingehalten"]
     }
 
     __table_args__ = (
@@ -56,6 +65,9 @@ class Benachrichtigungen(Base):
             return f"{self.CODES[1.1]} {self.datum} {self.CODES[1.2]}"
         elif self.benachrichtigungs_code == 2:
             return f"{self.CODES[2.1]} {self.datum} {self.CODES[2.2]}"
+        
+        elif self.benachrichtigungs_code == 3:
+            return f"{self.CODES[3][0]} {self.datum} {self.CODES[3][1]}"
 
 
 
@@ -304,6 +316,78 @@ class ModellTrackTime():
                 session.rollback()
 
         return ungerade_tage
+    
+    def checke_ruhezeiten(self):
+        """
+        Prüft, ob zwischen zwei Arbeitstagen die gesetzliche Ruhezeit von 11 Stunden eingehalten wurde.
+        Berücksichtigt nur Tage bis gestern (heutiger Tag wird ignoriert).
+        Bei Verstößen wird eine Benachrichtigung mit Code 3 erstellt.
+        Doppelte Benachrichtigungen werden vermieden.
+        """
+        if self.aktueller_nutzer_id is None:
+            return
+
+        heute = date.today()
+        gestern = heute - timedelta(days=1)
+
+
+        stmt = select(Zeiteintrag).where(
+            (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+            (Zeiteintrag.datum <= gestern)
+        ).order_by(Zeiteintrag.datum, Zeiteintrag.zeit)
+        einträge = session.scalars(stmt).all()
+
+        if not einträge:
+            return
+
+
+        tage = {}
+        for e in einträge:
+            if e.datum not in tage:
+                tage[e.datum] = []
+            tage[e.datum].append(e.zeit)
+
+        sortierte_tage = sorted(tage.keys())
+
+        verletzungen = []
+
+        for i in range(len(sortierte_tage) - 1):
+            tag_heute = sortierte_tage[i]
+            tag_morgen = sortierte_tage[i + 1]
+
+            if tag_morgen > gestern:
+                break
+
+  
+            if tag_heute.weekday() >= 5 or tag_morgen.weekday() >= 5:
+                continue
+
+            ende_heute = max(tage[tag_heute])
+            beginn_morgen = min(tage[tag_morgen])
+
+            ende_dt = datetime.combine(tag_heute, ende_heute)
+            beginn_dt = datetime.combine(tag_morgen, beginn_morgen)
+
+            differenz = beginn_dt - ende_dt
+
+            if differenz < timedelta(hours=11):
+                # Prüfen, ob schon Benachrichtigung existiert
+                exists_stmt = select(Benachrichtigungen).where(
+                    (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
+                    (Benachrichtigungen.datum == tag_morgen) &
+                    (Benachrichtigungen.benachrichtigungs_code == 3)
+                )
+                exists = session.execute(exists_stmt).scalar_one_or_none()
+
+                if not exists:
+                    benachrichtigung = Benachrichtigungen(
+                        mitarbeiter_id=self.aktueller_nutzer_id,
+                        benachrichtigungs_code=3,
+                        datum=tag_morgen
+                    )
+                    session.add(benachrichtigung)
+                    session.commit()
+                    verletzungen.append((tag_heute, tag_morgen, differenz))
 
 
     def berechne_gleitzeit(self):
@@ -374,6 +458,98 @@ class ModellTrackTime():
         if nutzer:
             nutzer.gleitzeit = self.aktueller_nutzer_gleitzeit
             session.commit()
+
+    def berechne_durchschnittliche_gleitzeit(self, start_datum: date, end_datum: date, include_missing_days: bool = False):
+        """
+        Berechnet die durchschnittliche tägliche Gleitzeit im angegebenen Zeitraum.
+        
+        Parameter:
+            start_datum (date): Startdatum der Auswertung (inklusive)
+            end_datum (date): Enddatum der Auswertung (inklusive)
+            include_missing_days (bool): 
+                Wenn True -> Tage ohne Stempel werden als 0 Stunden Arbeit (negativ) gewertet.
+                Wenn False -> Nur Tage mit Stempel werden berücksichtigt.
+        
+        Rückgabe:
+            dict mit 'durchschnitt_gleitzeit_stunden', 'anzahl_tage', 'berücksichtigte_tage'
+        """
+        if self.aktueller_nutzer_id is None:
+            return {"error": "Kein Nutzer angemeldet"}
+
+        if start_datum > end_datum:
+            return {"error": "Startdatum liegt nach Enddatum"}
+
+        # Nutzer laden
+        stmt = select(mitarbeiter).where(mitarbeiter.mitarbeiter_id == self.aktueller_nutzer_id)
+        nutzer = session.execute(stmt).scalar_one_or_none()
+        if not nutzer:
+            return {"error": "Nutzer nicht gefunden"}
+
+        # Vertragliche tägliche Arbeitszeit
+        tägliche_arbeitszeit = timedelta(hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
+
+        # Zeiteinträge im Zeitraum abrufen
+        stmt = select(Zeiteintrag).where(
+            (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+            (Zeiteintrag.datum >= start_datum) &
+            (Zeiteintrag.datum <= end_datum)
+        ).order_by(Zeiteintrag.datum, Zeiteintrag.zeit)
+
+        einträge = session.scalars(stmt).all()
+        if not einträge:
+            return {"durchschnitt_gleitzeit_stunden": 0.0, "anzahl_tage": 0, "berücksichtigte_tage": []}
+
+        # Arbeitszeiten pro Tag berechnen
+        arbeitstage = {}
+        i = 0
+        while i < len(einträge) - 1:
+            calc = CalculateTime(einträge[i], einträge[i + 1])
+            if calc:
+                calc.gesetzliche_pausen_hinzufügen()
+                if calc.datum in arbeitstage:
+                    arbeitstage[calc.datum] += calc.gearbeitete_zeit
+                else:
+                    arbeitstage[calc.datum] = calc.gearbeitete_zeit
+                i += 2
+            else:
+                i += 1
+
+        # Alle Tage im Bereich (nur Mo–Fr)
+        alle_tage = [start_datum + timedelta(days=i) for i in range((end_datum - start_datum).days + 1)]
+        arbeitstage_werktage = [t for t in alle_tage if t.weekday() < 5]
+
+        # Gleitzeitdifferenz berechnen
+        gleitzeit_differenzen = []
+        berücksichtigte_tage = []
+
+        for tag in arbeitstage_werktage:
+            if tag in arbeitstage:
+                differenz = arbeitstage[tag] - tägliche_arbeitszeit
+                gleitzeit_differenzen.append(differenz)
+                berücksichtigte_tage.append(tag)
+            elif include_missing_days:
+                # Fehlender Tag wird als volle Sollzeit-Minus gewertet
+                differenz = timedelta(hours=-tägliche_arbeitszeit.total_seconds() / 3600)
+                gleitzeit_differenzen.append(differenz)
+                berücksichtigte_tage.append(tag)
+            else:
+                # Tag wird ignoriert
+                continue
+
+        if not gleitzeit_differenzen:
+            return {"durchschnitt_gleitzeit_stunden": 0.0, "anzahl_tage": 0, "berücksichtigte_tage": []}
+
+        # Durchschnitt berechnen
+        gesamt_gleitzeit = sum(gleitzeit_differenzen, timedelta())
+        durchschnitt = gesamt_gleitzeit / len(gleitzeit_differenzen)
+        durchschnitt_stunden = round(durchschnitt.total_seconds() / 3600, 2)
+
+        return {
+            "durchschnitt_gleitzeit_stunden": durchschnitt_stunden,
+            "anzahl_tage": len(gleitzeit_differenzen),
+            "berücksichtigte_tage": berücksichtigte_tage
+        }
+
 
 
 
