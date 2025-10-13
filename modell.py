@@ -137,7 +137,7 @@ class ModellTrackTime():
         stmt = select(Abwesenheit).where(
             (Abwesenheit.mitarbeiter_id == self.aktueller_nutzer_id) &
             (Abwesenheit.datum == datum) &
-            (Abwesenheit.genehmigt == True)
+            (Abwesenheit.genehmigt)
         )
         abwesenheit = session.execute(stmt).scalar_one_or_none()
         return abwesenheit is not None
