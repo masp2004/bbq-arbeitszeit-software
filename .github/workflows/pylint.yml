@@ -20,4 +20,9 @@ jobs:
         pip install pylint
     - name: Analysing the code with pylint
       run: |
-        pylint $(git ls-files '*.py')
+        files=$(find . -name "*.py" -not -path "./venv/*")
+        if [ -n "$files" ]; then
+          echo "$files" | xargs pylint
+        else
+          echo "No Python files to lint."
+        fi
