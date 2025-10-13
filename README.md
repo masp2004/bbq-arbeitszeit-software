@@ -57,15 +57,15 @@ Die vollständige Dokumentation befindet sich im GitHub-Wiki und umfasst:
 
 1. Klonen Sie das Repository:
    ```bash
-   git clone https://github.com/bbq-arbeitszeit-software.git
-   cd bbq-arbeitzeit-software
+   git clone https://github.com/masp2004/bbq-arbeitszeit-software.git
+   cd bbq-arbeitszeit-software
    ```
 2. Installieren Sie Python 3.10 (kompatibel mit Windows 10/11).
 3. Erstellen Sie eine virtuelle Umgebung:
    ```bash
    python -m venv venv
    source venv/bin/activate  # Linux/Mac
-   venv\Scripts\activate     # Windows
+   .\venv\Scripts\activate     # Windows
    ```
 4. Installieren Sie Abhängigkeiten:
    ```bash
