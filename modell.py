@@ -529,7 +529,7 @@ class ModellTrackTime():
                 berücksichtigte_tage.append(tag)
             elif include_missing_days:
                 # Fehlender Tag wird als volle Sollzeit-Minus gewertet
-                differenz = timedelta(hours=-tägliche_arbeitszeit.total_seconds() / 3600)
+                differenz = -tägliche_arbeitszeit
                 gleitzeit_differenzen.append(differenz)
                 berücksichtigte_tage.append(tag)
             else:
