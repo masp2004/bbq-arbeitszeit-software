@@ -121,6 +121,47 @@ class ModellTrackTime():
         self.feedback_stempel = ""
         self.feedback_neues_passwort = ""
 
+    def ist_abwesend(self, datum):
+        """
+        Prüft, ob für den gegebenen Tag eine genehmigte Abwesenheit existiert.
+        
+        Parameter:
+            datum (date): Das zu prüfende Datum
+            
+        Rückgabe:
+            bool: True wenn eine genehmigte Abwesenheit existiert, sonst False
+        """
+        if self.aktueller_nutzer_id is None:
+            return False
+            
+        stmt = select(Abwesenheit).where(
+            (Abwesenheit.mitarbeiter_id == self.aktueller_nutzer_id) &
+            (Abwesenheit.datum == datum) &
+            (Abwesenheit.genehmigt == True)
+        )
+        abwesenheit = session.execute(stmt).scalar_one_or_none()
+        return abwesenheit is not None
+
+    def berechne_tägliche_arbeitszeit(self, datum):
+        """
+        Berechnet die erwartete tägliche Arbeitszeit für einen bestimmten Tag.
+        Berücksichtigt genehmigte Abwesenheiten (Urlaub, Krankheit, etc.).
+        
+        Parameter:
+            datum (date): Das Datum für das die tägliche Arbeitszeit berechnet werden soll
+            
+        Rückgabe:
+            timedelta: Die erwartete Arbeitszeit für den Tag (0 wenn abwesend, sonst Wochenstunden/5)
+        """
+        # Wenn der Nutzer an diesem Tag abwesend ist, wird keine Arbeitszeit erwartet
+        if self.ist_abwesend(datum):
+            return timedelta(hours=0)
+        
+        # Standard: Wochenstunden geteilt durch 5 Arbeitstage
+        # Hinweis: Diese Berechnung geht von einer 5-Tage-Woche aus.
+        # In Wochen mit Feiertagen kann die tatsächliche tägliche Sollzeit höher sein.
+        return timedelta(hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
+
     def get_zeiteinträge(self):
         if self.aktueller_nutzer_id is None or self.bestimmtes_datum is None:
             return
@@ -239,17 +280,16 @@ class ModellTrackTime():
         tag = letzter_login
         while tag <= gestern:
             if tag.weekday() < 5:  # Montag–Freitag
-                stmt = select(Zeiteintrag).where(
-                    (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
-                    (Zeiteintrag.datum == tag)
-                )
-                eintrag = session.execute(stmt).scalars().first()
-                if not eintrag:
-                    fehlende_tage.append(tag)
+                # Überspringe Tage mit genehmigten Abwesenheiten
+                if not self.ist_abwesend(tag):
+                    stmt = select(Zeiteintrag).where(
+                        (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+                        (Zeiteintrag.datum == tag)
+                    )
+                    eintrag = session.execute(stmt).scalars().first()
+                    if not eintrag:
+                        fehlende_tage.append(tag)
             tag += timedelta(days=1)
-
-        # Tägliche Arbeitszeit berechnen
-        tägliche_arbeitszeit = timedelta(hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
 
         abgezogene_tage = []
         for tag in fehlende_tage:
@@ -262,6 +302,9 @@ class ModellTrackTime():
             exists = session.execute(exists_stmt).scalar_one_or_none()
 
             if not exists:
+                # Tägliche Arbeitszeit für diesen spezifischen Tag berechnen
+                tägliche_arbeitszeit = self.berechne_tägliche_arbeitszeit(tag)
+                
                 # Nur wenn noch keine Benachrichtigung existiert → Gleitzeit abziehen
                 self.aktueller_nutzer_gleitzeit -= tägliche_arbeitszeit.total_seconds() / 3600
                 nutzer.gleitzeit = self.aktueller_nutzer_gleitzeit
@@ -426,8 +469,6 @@ class ModellTrackTime():
             else:
                 i += 1  
 
-        tägliche_arbeitszeit = timedelta( hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
-
         for datum, arbeitszeit in arbeitstage.items():
              exists_stmt = select(Benachrichtigungen).where(
                 (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
@@ -443,7 +484,9 @@ class ModellTrackTime():
             )
              unvalidierte = session.execute(unvalidierte_stmt).scalars().all()
         
-             if not exists and not unvalidierte: 
+             if not exists and not unvalidierte:
+                # Tägliche Arbeitszeit für diesen spezifischen Tag berechnen
+                tägliche_arbeitszeit = self.berechne_tägliche_arbeitszeit(datum)
                 arbeitstage[datum] -= tägliche_arbeitszeit
 
 
@@ -487,9 +530,6 @@ class ModellTrackTime():
         if not nutzer:
             return {"error": "Nutzer nicht gefunden"}
 
-        # Vertragliche tägliche Arbeitszeit
-        tägliche_arbeitszeit = timedelta(hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
-
         # Zeiteinträge im Zeitraum abrufen
         stmt = select(Zeiteintrag).where(
             (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
@@ -526,14 +566,19 @@ class ModellTrackTime():
 
         for tag in arbeitstage_werktage:
             if tag in arbeitstage:
+                # Tägliche Arbeitszeit für diesen spezifischen Tag berechnen
+                tägliche_arbeitszeit = self.berechne_tägliche_arbeitszeit(tag)
                 differenz = arbeitstage[tag] - tägliche_arbeitszeit
                 gleitzeit_differenzen.append(differenz)
                 berücksichtigte_tage.append(tag)
             elif include_missing_days:
                 # Fehlender Tag wird als volle Sollzeit-Minus gewertet
-                differenz = -tägliche_arbeitszeit
-                gleitzeit_differenzen.append(differenz)
-                berücksichtigte_tage.append(tag)
+                # Aber nur wenn keine genehmigte Abwesenheit vorliegt
+                tägliche_arbeitszeit = self.berechne_tägliche_arbeitszeit(tag)
+                if tägliche_arbeitszeit > timedelta(hours=0):
+                    differenz = -tägliche_arbeitszeit
+                    gleitzeit_differenzen.append(differenz)
+                    berücksichtigte_tage.append(tag)
             else:
                 # Tag wird ignoriert
                 continue
