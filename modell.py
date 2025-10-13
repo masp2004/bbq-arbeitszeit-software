@@ -359,6 +359,8 @@ class ModellTrackTime():
                 break
 
   
+            # In Python, weekday() returns 5 for Saturday and 6 for Sunday.
+            # This logic skips weekends for rest period checking.
             if tag_heute.weekday() >= 5 or tag_morgen.weekday() >= 5:
                 continue
 
