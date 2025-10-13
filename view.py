@@ -17,6 +17,7 @@ from kivymd.uix.button import MDIconButton
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.popup import Popup
 from kivy.graphics import Color, Rectangle, Line, Ellipse
+from kivy.uix.image import Image
 
 
 class LoginView(Screen):
@@ -25,26 +26,46 @@ class LoginView(Screen):
     def __init__(self, **kwargs):
         '''Initialisiert die Login-View'''
         super().__init__(**kwargs)
-        self.width_window = 300
-        self.height_window = 220
-        Window.size = (400, 300)
+        self.width_window = 320
+        self.height_window = 270
+        Window.size = (self.width_window, self.height_window)
 
-        self.layout = BoxLayout(orientation="vertical", padding=20, spacing=10)
-        self.layout.add_widget(Label(text="Anmeldung", font_size=24))
+        self.layout = BoxLayout(orientation="vertical", padding=30, spacing=10)
 
-        self.username_input = TextInput(multiline=False, hint_text="Benutzername")
-        self.password_input = TextInput(password=True, multiline=False, hint_text="Passwort")
-        self.anmeldung_rückmeldung_label = Label(text="")
+        # Horizontaler Bereich für Logo und Überschrift
+        top_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=80)
+        title = Label(text="Anmeldung", font_size=24, valign="middle", halign="left")
+        title.bind(size=title.setter("text_size"))
+        logo = Image(source="velqor.png", size_hint=(None, None), size=(90, 90))
+        top_row.add_widget(title)
+        top_row.add_widget(logo)
+
+        self.layout.add_widget(top_row)
+
+        self.username_input = TabTextInput(multiline=False, hint_text="Benutzername", 
+                                           size_hint_y=None, height=40)
+        self.password_input = TabTextInput(password=True, multiline=False, hint_text="Passwort", 
+                                           size_hint_y=None, height=40)
+
+        self.anmeldung_rückmeldung_label = Label(text="", color=(1, 0, 0))
         self.layout.add_widget(self.username_input)
         self.layout.add_widget(self.password_input)
-
-        self.login_button = Button(text="Login", size_hint=(1, 1), font_size=20)
-        self.change_view_registrieren_button = Button(text="Registrieren", size_hint=(1, 1), font_size=20)
-        self.layout.add_widget(self.login_button)
-        self.layout.add_widget(self.change_view_registrieren_button)
         self.layout.add_widget(self.anmeldung_rückmeldung_label)
 
+        button_layout = BoxLayout(spacing=10)
+        self.login_button = Button(text="Login", size_hint=(None, None), size=(165, 40), font_size=20)
+        self.change_view_registrieren_button = Button(text="Registrieren", size_hint=(None, None), 
+                                                      size=(165, 40), font_size=20)
+        button_layout.add_widget(self.change_view_registrieren_button)
+        button_layout.add_widget(self.login_button)
+        self.layout.add_widget(button_layout)
+
         self.add_widget(self.layout)
+
+    def on_enter(self):
+        self.username_input.focus = True
+        self.username_input.focus_next = self.password_input
+        self.password_input.focus_next = self.username_input
 
 
 class RegisterView(Screen):
@@ -54,52 +75,37 @@ class RegisterView(Screen):
         '''Initialisiert die Register-View'''
         super().__init__(**kwargs)
 
-        self.width_window = 800
-        self.height_window = 600
-        Window.size = (self.width_window, self.height_window)
+        self.width_window = 535
+        self.height_window = 380
         self.date_picker = MDDatePicker()
 
         # Hauptlayout (alles untereinander)
-        self.layout = BoxLayout(orientation="vertical", padding=20, spacing=10)
+        self.layout = BoxLayout(orientation="vertical", padding=30, spacing=20)
 
         # Überschrift 
-        self.layout.add_widget(Label(text="Registrieren", font_size=24, size_hint=(1, 0.2)))
+        self.layout.add_widget(Label(text="Registrieren", font_size=24, size_hint_y=None, height=20))
 
-        # 5 Reihen
-        self.layout_reihe1 = BoxLayout(orientation="horizontal", spacing=10,  size_hint_y=None, height=40)
-        self.layout_reihe2 = BoxLayout(orientation="horizontal", spacing=10,  size_hint_y=None, height=40)
-        self.layout_reihe3 = BoxLayout(orientation="horizontal", spacing=10,  size_hint_y=None, height=40)
-        self.layout_reihe4 = BoxLayout(orientation="horizontal", spacing=10,  size_hint_y=None, height=40)
-        self.layout_reihe5 = BoxLayout(orientation="horizontal", spacing=10,  size_hint_y=None, height=40)
-
-        # Labels 
-        self.layout_reihe1.add_widget(Label(text="Vor- und Nachname:"))
-        self.layout_reihe2.add_widget(Label(text="Passwort:"))
-        self.layout_reihe3.add_widget(Label(text="Passwort wiederholen:"))
-        self.layout_reihe4.add_widget(Label(text="Wöchentliche Arbeitszeit:"))
-        self.layout_reihe5.add_widget(Label(text="Geburtsdatum:"))
+        grid = GridLayout(cols=2, spacing=10, size_hint_y=None, height=240)
+        grid.bind(minimum_height=grid.setter('height'))
         
         # Eingabefelder
-        self.reg_username_input = TextInput(
+        self.reg_username_input = TabTextInput(
             multiline=False,
-            hint_text="Vor und Nachname",
-            font_size=18,
+            hint_text="Vor- und Nachname",
             size_hint_y=None,
             height=40
         )
-        self.reg_password_input = TextInput(
+        self.reg_password_input = TabTextInput(
             password=True,
             multiline=False,
             hint_text="Passwort",
-            font_size=18,
             size_hint_y=None,
             height=40
         )
-        self.reg_password_input_rep = TextInput(
+        self.reg_password_input_rep = TabTextInput(
             password=True,
             multiline=False,
-            hint_text="Passwort Wiederholen",
-            font_size=18,
+            hint_text="Passwort wiederholen",
             size_hint_y=None,
             height=40
         )
@@ -108,44 +114,68 @@ class RegisterView(Screen):
             values=("30", "35", "40"),  # muss String sein
             size_hint_y=None,
             height=40,
-            font_size=18
         )
-        self.reg_geburtsdatum = TextInput(
+        self.reg_geburtsdatum = TabTextInput(
             hint_text="TT/MM/JJJJ",
-            size_hint=(1, None),
+            size_hint_y=None,
             readonly=True,
             multiline=False,
-            font_size=18,
             height=40
         )
 
-        self.layout_reihe1.add_widget(self.reg_username_input)
-        self.layout_reihe2.add_widget(self.reg_password_input)
-        self.layout_reihe3.add_widget(self.reg_password_input_rep)
-        self.layout_reihe4.add_widget(self.reg_woechentliche_arbeitszeit)
-        self.layout_reihe5.add_widget(self.reg_geburtsdatum)
-
-        # Spalten ins horizontale Layout packen
-        self.layout.add_widget(self.layout_reihe1)
-        self.layout.add_widget(self.layout_reihe2)
-        self.layout.add_widget(self.layout_reihe3)
-        self.layout.add_widget(self.layout_reihe4)
-        self.layout.add_widget(self.layout_reihe5)
+        grid.add_widget(Label(
+            text="Vor- und Nachname:", size_hint=(None, None), size=(230, 40), text_size=(230, 40),
+            halign="left", valign="middle")
+        )
+        grid.add_widget(self.reg_username_input)
+        grid.add_widget(Label(
+            text="Passwort:", size_hint=(None, None), size=(230, 40), text_size=(230, 40),
+            halign="left", valign="middle")
+        )
+        grid.add_widget(self.reg_password_input)
+        grid.add_widget(Label(
+            text="Passwort wiederholen:", size_hint=(None, None), size=(230, 40), text_size=(230, 40),
+            halign="left", valign="middle")
+        )
+        grid.add_widget(self.reg_password_input_rep)
+        grid.add_widget(Label(
+            text="Wöchentliche Arbeitszeit:", size_hint=(None, None), size=(230, 40), text_size=(230, 40),
+            halign="left", valign="middle")
+        )
+        grid.add_widget(self.reg_woechentliche_arbeitszeit)
+        grid.add_widget(Label(
+            text="Geburtsdatum:", size_hint=(None, None), size=(230, 40), text_size=(230, 40),
+            halign="left", valign="middle")
+        )
+        grid.add_widget(self.reg_geburtsdatum)
+        
+        self.layout.add_widget(grid)
 
         # Button und Labels unten hinzufügen
-        self.change_view_login_button = Button(text="Zurück zum Login", size_hint=(1, 0.3), font_size=20)
-        self.register_button = Button(text="Registrieren", size_hint=(1, 0.3), font_size=20)
+        button_layout = BoxLayout(spacing=10)
+        self.change_view_login_button = Button(text="Zurück zum Login", size_hint=(None, None), size=(300, 50), 
+                                               font_size=20)
+        self.register_button = Button(text="Registrieren", size_hint=(None, None), size=(300, 50), font_size=20)
         self.register_rückmeldung_label = Label(
             text="",
-            font_size=12,   # kleiner als Standard
-            size_hint=(1, 0.1)
+            font_size=18,
+            size_hint_y=None,
+            height=30,
+            color=(1, 0, 0)
         )
         self.layout.add_widget(self.register_rückmeldung_label)
-        self.layout.add_widget(self.register_button)
-        self.layout.add_widget(self.change_view_login_button)
+        button_layout.add_widget(self.change_view_login_button)
+        button_layout.add_widget(self.register_button)
+        self.layout.add_widget(button_layout)
 
         # Alles ins Screen packen
         self.add_widget(self.layout)
+
+    def on_enter(self):
+        self.reg_username_input.focus = True
+        self.reg_username_input.focus_next = self.reg_password_input
+        self.reg_password_input.focus_next = self.reg_password_input_rep
+        self.reg_password_input_rep.focus_next = self.reg_geburtsdatum
 
 
 class MainView(Screen):
@@ -174,27 +204,17 @@ class MainView(Screen):
         main_layout = BoxLayout(orientation='horizontal', padding=20)
 
         # Hauptlayout vertikal
-        self.time_tracking_layout = BoxLayout(orientation='vertical', padding=20, spacing=20)
+        self.time_tracking_layout = BoxLayout(orientation='vertical', spacing=20, size_hint_y=None, height=590)
+        self.time_tracking_layout.bind(minimum_height=self.time_tracking_layout.setter('height'))
+        self.time_tracking_layout.pos_hint = {"top": 1}
 
-        # --- Überschrift ---
-        self.header_label = Label(
-            text="Zeiterfassung",
-            size_hint=(1, None),
-            height=40,
-            font_size=20,
-            halign="center",
-            valign="middle"
-        )
-        self.header_label.bind(size=self.header_label.setter('text_size'))
-        self.time_tracking_layout.add_widget(self.header_label)
-
-        # --- Erste Zeile: Stempeln + Gleitzeit ---
+        # Stempeln und Gleitzeit
         self.reihe_1 = BoxLayout(orientation='horizontal', spacing=15, size_hint_y=None, height=40)
 
         self.stempel_button = Button(text="Stempeln", size_hint=(None, None), size=(130, 40))
         self.anzeige_gleitzeit_text_label = Label(
-            text="Aktuelle Gleitzeit:", size_hint=(None, None), size=(220, 40),
-            text_size=(220, 40), halign="left", valign="middle"
+            text="Aktuelle Gleitzeit:", size_hint=(None, None), size=(170, 40),
+            text_size=(170, 40), halign="right", valign="middle"
         )
         self.anzeige_gleitzeit_wert_label = Label(
             text="", size_hint=(None, None), size=(220, 40),
@@ -209,7 +229,8 @@ class MainView(Screen):
 
 
         # --- Horizontale Buttons oder weitere Optionen (optional) ---
-        self.time_tracking_horizontal_layout = BoxLayout(orientation='horizontal', spacing=15, size_hint_y=None, height=40)
+        self.time_tracking_horizontal_layout = BoxLayout(orientation='horizontal', spacing=15, 
+                                                         size_hint_y=None, height=40)
         # Beispiel: Weitere Buttons oder Filter
         self.time_tracking_layout.add_widget(self.time_tracking_horizontal_layout)
 
@@ -219,18 +240,19 @@ class MainView(Screen):
         main_layout.add_widget(self.time_tracking_layout)
         main_layout.add_widget(self.ampel)
 
-        # --- Tab zum TabbedPanel hinzufügen ---
+        # Tab zum TabbedPanel hinzufügen
         self.time_tracking_tab.add_widget(main_layout)
         self.layout.add_widget(self.time_tracking_tab)
 
     def create_zeitnachtrag_tab(self):
-
         '''Erstellt die View für das manuelle Nachtragen von Zeitstempeln'''
         
         self.zeitnachtrag_tab = TabbedPanelItem(text="Zeit nachtragen")
-        self.zeitnachtrag_layout = BoxLayout(orientation='vertical', padding=20, spacing=15)
+        self.zeitnachtrag_layout = BoxLayout(orientation='vertical', padding=20, spacing=15, 
+                                             size_hint_y=None, height=590)
+        self.zeitnachtrag_layout.bind(minimum_height=self.zeitnachtrag_layout.setter('height'))
 
-        # --- Überschrift ---
+        # Überschrift
         self.überschrift = Label(
             text="Manuelles Nachtragen von Zeitstempeln",
             size_hint=(1, None),
@@ -242,30 +264,30 @@ class MainView(Screen):
         self.überschrift.bind(size=self.überschrift.setter('text_size'))  # damit halign wirkt
         self.zeitnachtrag_layout.add_widget(self.überschrift)
 
-        # --- GridLayout nur mit Datum und Uhrzeit ---
-        self.grid = GridLayout(cols=2, padding=(0, 20, 0, 0), spacing=15)
+        # GridLayout nur mit Datum und Uhrzeit
+        self.grid = GridLayout(cols=2, padding=(0, 20, 0, 0), spacing=15, size_hint_y=None, height=140)
 
         # Datum
-        self.grid.add_widget(Label(text="Datum: ", size_hint=(None, None), size=(220, 40),
-                                text_size=(220, 40), halign="left", valign="middle"))
+        self.grid.add_widget(Label(text="Datum: ", size_hint=(None, None), size=(80, 40),
+                                text_size=(80, 40), halign="left", valign="middle"))
         self.date_input = TextInput(hint_text="TT/MM/JJJJ", size_hint=(None, None),
                                     size=(300, 40), readonly=True, multiline=False)
 
         self.grid.add_widget(self.date_input)
 
         # Uhrzeit
-        self.grid.add_widget(Label(text="Uhrzeit: ", size_hint=(None, None), size=(220, 40),
-                                text_size=(220, 40), halign="left", valign="middle"))
+        self.grid.add_widget(Label(text="Uhrzeit: ", size_hint=(None, None), size=(80, 40),
+                                text_size=(80, 40), halign="left", valign="middle"))
         self.time_input = TextInput(hint_text="HH:MM", size_hint=(None, None),
                                     size=(300, 40), readonly=True, multiline=False)
         self.grid.add_widget(self.time_input)
 
-        # --- Button zum Nachtragen ---
+        # Button zum Nachtragen
         self.nachtragen_button = Button(text="Zeitstempel nachtragen", size_hint=(None, None), size=(220, 40))
 
-        # --- Rückmeldung ---
+        # Rückmeldung
         self.nachtrag_feedback = Label(text="", size_hint=(None, None), size=(500, 60),
-                                    text_size=(500, None), halign="left", valign="middle")
+                                    text_size=(500, 60), halign="left", valign="middle")
 
         self.zeitnachtrag_layout.add_widget(self.grid)
         self.zeitnachtrag_layout.add_widget(self.nachtragen_button)
@@ -384,10 +406,10 @@ class MainView(Screen):
 
         self.settings_layout.add_widget(Label(text="Passwort ändern", font_size=18, 
                                               size_hint=(None, None), height=20, padding=(40,0,0,0)))
-        self.new_password_input = TextInput(password=True, hint_text="Neues Passwort", 
+        self.new_password_input = TabTextInput(password=True, hint_text="Neues Passwort", 
                                             size_hint=(None, None), size=(300, 40))
         self.settings_layout.add_widget(self.new_password_input)
-        self.repeat_password_input = TextInput(password=True, hint_text="Neues Passwort wiederholen", 
+        self.repeat_password_input = TabTextInput(password=True, hint_text="Neues Passwort wiederholen", 
                                                size_hint=(None, None), size=(300, 40))
         self.settings_layout.add_widget(self.repeat_password_input)
         self.change_password_button = Button(text="Passwort ändern", size_hint=(None, None), 
@@ -406,34 +428,46 @@ class MainView(Screen):
                                      size_hint=(None, None), size=(200, 40)))
         self.grid.add_widget(Label(text="Anzahl Urlaubstage: ", font_size=18, size_hint=(None, None), 
                                    size=(160, 40), text_size=(160, 40), halign="left", valign="middle"))
-        self.grid.add_widget(TextInput(multiline=False, size_hint=(None, None), size=(200, 40)))
+        self.day_off_input = TabTextInput(multiline=False, size_hint=(None, None), size=(200, 40), halign="right")
+        self.grid.add_widget(self.day_off_input)
 
         self.grid.add_widget(Label(text="Grenzwerte: ", font_size=18, size_hint=(None, None), size=(160, 40), 
                                    text_size=(160, 40), halign="left", valign="middle"))
         self.horizonatl_layout1 = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=40)
         self.horizonatl_layout1.add_widget(Label(text="grün: ", font_size=18, size_hint=(None, None), size=(40, 40), 
                                                  text_size=(40, 40), halign="left", valign="middle"))
-        self.horizonatl_layout1.add_widget(TextInput(multiline=False, size_hint=(None, None), size=(150, 40)))
+        self.green_limit_input = TabTextInput(multiline=False, size_hint=(None, None), size=(150, 40), halign="right")
+        self.horizonatl_layout1.add_widget(self.green_limit_input)
         self.grid.add_widget(self.horizonatl_layout1)
 
         self.grid.add_widget(Label(size_hint=(None, None), size=(160, 40)))
         self.horizonatl_layout2 = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=40)
         self.horizonatl_layout2.add_widget(Label(text="gelb: ", font_size=18, size_hint=(None, None), size=(40, 40), 
                                                  text_size=(40, 40), halign="left", valign="middle"))
-        self.horizonatl_layout2.add_widget(TextInput(multiline=False, size_hint=(None, None), size=(150, 40)))
+        self.yellow_limit_input = TabTextInput(multiline=False, size_hint=(None, None), size=(150, 40), halign="right")
+        self.horizonatl_layout2.add_widget(self.yellow_limit_input)
         self.grid.add_widget(self.horizonatl_layout2)
 
         self.grid.add_widget(Label(size_hint=(None, None), size=(160, 40)))
         self.horizonatl_layout3 = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=40)
         self.horizonatl_layout3.add_widget(Label(text="rot: ", font_size=18, size_hint=(None, None), size=(40, 40), 
                                                  text_size=(40, 40), halign="left", valign="middle"))
-        self.horizonatl_layout3.add_widget(TextInput(multiline=False, size_hint=(None, None), size=(150, 40)))
+        self.red_limit_input = TabTextInput(multiline=False, size_hint=(None, None), size=(150, 40), halign="right")
+        self.horizonatl_layout3.add_widget(self.red_limit_input)
         self.grid.add_widget(self.horizonatl_layout3)
 
         self.settings_horizontal_layout.add_widget(self.grid)
         self.settings_horizontal_layout.add_widget(self.settings_layout)
         self.settings_tab.add_widget(self.settings_horizontal_layout)
         self.layout.add_widget(self.settings_tab)
+
+    def on_enter(self):
+        self.day_off_input.focus_next = self.green_limit_input
+        self.green_limit_input.focus_next = self.yellow_limit_input
+        self.yellow_limit_input.focus_next = self.red_limit_input
+        self.red_limit_input.focus_next = self.new_password_input
+        self.new_password_input.focus_next = self.repeat_password_input
+        self.repeat_password_input.focus_next = self.day_off_input
 
 
 class TrafficLight(BoxLayout):
@@ -543,7 +577,7 @@ class MonthCalendar(BoxLayout):
         # Überschriften
         self.detail_table.add_widget(self.aligned_label(text="Datum", bold=True, color=(0, 0, 0, 1), 
                                                         size_hint_y=None, height=20, halign="left", valign="top"))
-        self.detail_table.add_widget(self.aligned_label(text="  Zeiten", bold=True, color=(0, 0, 0, 1), 
+        self.detail_table.add_widget(self.aligned_label(text="Zeiten", bold=True, color=(0, 0, 0, 1), 
                                                         size_hint_y=None, height=20, halign="left", valign="top"))
         self.detail_table.add_widget(self.aligned_label(text="Gleitzeit", bold=True, color=(0, 0, 0, 1), 
                                                         size_hint_y=None, height=20, halign="left", valign="top"))
@@ -830,3 +864,22 @@ class DayCell(BoxLayout):
 
         lbl.bind(size=update_background, pos=update_background)
         self.entries_box.add_widget(lbl)
+
+
+class TabTextInput(TextInput):
+    """Beim Drücken der Tab-Taste im TextInput-Feld wird der Fokus auf das nächste Eingabefeld gesetzt"""
+
+    def __init__(self, **kwargs):
+        """Initialisiert das TabTextInput-Feld"""
+
+        super().__init__(**kwargs)
+        self.write_tab = False
+
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        """Wird aufgerufen, wenn eine Taste gedrückt wird, während das TextInput-Feld den Fokus hat"""
+
+        if keycode[1] == 'tab':
+            if self.focus_next:
+                self.focus_next.focus = True
+            return True  # Event abfangen (kein Tab-Zeichen einfügen)
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
