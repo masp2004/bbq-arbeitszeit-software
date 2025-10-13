@@ -575,7 +575,7 @@ class ModellTrackTime():
                 # Fehlender Tag wird als volle Sollzeit-Minus gewertet
                 # Aber nur wenn keine genehmigte Abwesenheit vorliegt
                 tägliche_arbeitszeit = self.berechne_tägliche_arbeitszeit(tag)
-                if tägliche_arbeitszeit > timedelta(hours=0):
+                if tägliche_arbeitszeit > timedelta():
                     differenz = -tägliche_arbeitszeit
                     gleitzeit_differenzen.append(differenz)
                     berücksichtigte_tage.append(tag)
