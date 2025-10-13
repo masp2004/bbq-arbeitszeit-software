@@ -81,17 +81,21 @@ class Controller():
 
         self.main_view.ampel.set_state(state=self.model_track_time.ampel_status)
 
-        for nachricht in self.model_track_time.benachrichtigungen:
-            self.main_view.add_benachrichtigung(text=nachricht.create_fehlermeldung(),
-                                                datum=nachricht.datum)
 
 
-        if self.model_track_time.zeiteinträge_bestimmtes_datum is not None:    
+        self.main_view.month_calendar.times_box.clear_widgets()  
+        if self.model_track_time.zeiteinträge_bestimmtes_datum is not None:
+              
             for stempel in self.model_track_time.zeiteinträge_bestimmtes_datum:
                 zeit = stempel.zeit.strftime("%H:%M")
   
 
                 self.main_view.month_calendar.add_time_row(stempelzeit= zeit)
+
+    def update_view_benachrichtigungen(self):
+        for nachricht in self.model_track_time.benachrichtigungen:
+            self.main_view.add_benachrichtigung(text=nachricht.create_fehlermeldung(),
+                                                datum=nachricht.datum)
 
 
 
@@ -108,10 +112,11 @@ class Controller():
             self.model_track_time.checke_arbeitstage()
             self.model_track_time.checke_stempel()
             self.model_track_time.berechne_gleitzeit()
+            self.model_track_time.checke_ruhezeiten()
             self.model_track_time.get_messages()
             self.model_track_time.set_ampel_farbe()
             self.update_view_time_tracking()
-        
+            self.update_view_benachrichtigungen()
 
     def registrieren_button_clicked(self,b):
         self.update_model_login()
