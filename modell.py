@@ -95,7 +95,7 @@ class CalculateTime():
          if self.gearbeitete_zeit > timedelta(hours=6):
              self.gearbeitete_zeit -= timedelta(minutes=30)
 
-         elif self.gearbeitete_zeit > timedelta(hours=9):
+         if self.gearbeitete_zeit > timedelta(hours=9):
              self.gearbeitete_zeit -= timedelta(minutes=45)
 
 
