@@ -52,7 +52,9 @@ class Benachrichtigungen(Base):
         1.2:"wurde nicht gestempelt. Es wird für jeden Tag die Tägliche arbeitszeit der Gleitzeit abgezogen",
         2.1:"Am",
         2.2:"fehlt ein Stempel, bitte tragen sie diesen nach",
-        3: ["Achtung, am", "wurden die gesetzlichen Ruhezeiten nicht eingehalten"]
+        3: ["Achtung, am", "wurden die gesetzlichen Ruhezeiten nicht eingehalten"],
+        4: "Achtung, Ihre durchschnittliche tägliche Arbeitszeit der letzten 6 Monate hat 8 Stunden überschritten.",
+        5:["Achtung am", "wurde die maximale gesetzlich zulässsige Arbeitszeit überschritten."]
     }
 
     __table_args__ = (
@@ -68,6 +70,9 @@ class Benachrichtigungen(Base):
         
         elif self.benachrichtigungs_code == 3:
             return f"{self.CODES[3][0]} {self.datum} {self.CODES[3][1]}"
+        
+        elif self.benachrichtigungs_code ==4:
+            return self.CODES[4]
 
 
 
@@ -84,11 +89,14 @@ class CalculateTime():
          start_dt = datetime.combine(self.datum, self.startzeit)
          end_dt = datetime.combine(self.datum, self.endzeit)
 
-         self.gearbeitete_zeit = end_dt - start_dt
+         self.gearbeitete_zeit = end_dt - start_dt  
 
      def gesetzliche_pausen_hinzufügen(self):
          if self.gearbeitete_zeit > timedelta(hours=6):
              self.gearbeitete_zeit -= timedelta(minutes=30)
+
+         if self.gearbeitete_zeit > timedelta(hours=9):
+             self.gearbeitete_zeit -= timedelta(minutes=45)
 
 
 
@@ -111,6 +119,9 @@ class ModellTrackTime():
         self.neues_passwort_wiederholung = None
 
         self.ampel_status = None
+
+        self.neuer_abwesenheitseintrag_datum = None
+        self.neuer_abwesenheitseintrag_art = None
 
 
         self.benachrichtigungen = []
@@ -214,6 +225,21 @@ class ModellTrackTime():
         self.feedback_manueller_stempel = f"Stempel am {self.manueller_stempel_datum} um {self.manueller_stempel_uhrzeit} erfolgreich hinzugefügt"
 
 
+    def urlaub_eintragen(self):
+        if (self.neuer_abwesenheitseintrag_datum is None) or (self.neuer_abwesenheitseintrag_art is None):
+            return
+        elif (self.neuer_abwesenheitseintrag_art == "Urlaub") or (self.neuer_abwesenheitseintrag_art == "Krankheit"):
+            neue_abwesenheit = Abwesenheit(
+                mitarbeiter_id = self.aktueller_nutzer_id,
+                datum = self.neuer_abwesenheitseintrag_datum,
+                typ = self.neuer_abwesenheitseintrag_art
+
+            )
+        else:
+            return
+
+        session.add(neue_abwesenheit)
+        session.commit()
 
 
 
@@ -261,7 +287,14 @@ class ModellTrackTime():
             )
             exists = session.execute(exists_stmt).scalar_one_or_none()
 
-            if not exists:
+            # prüfen ob Urlaubstage vorhanden sind
+            urlaubs_stmt = select(Abwesenheit).where(
+                (Abwesenheit.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Abwesenheit.datum == tag) 
+            )
+            exist_urlaub = session.execute(urlaubs_stmt).scalar_one_or_none()
+
+            if not exists and not exist_urlaub:
                 # Nur wenn noch keine Benachrichtigung existiert → Gleitzeit abziehen
                 self.aktueller_nutzer_gleitzeit -= tägliche_arbeitszeit.total_seconds() / 3600
                 nutzer.gleitzeit = self.aktueller_nutzer_gleitzeit
@@ -391,6 +424,131 @@ class ModellTrackTime():
                     session.commit()
                     verletzungen.append((tag_heute, tag_morgen, differenz))
 
+    def checke_durchschnittliche_arbeitszeit(self):
+        """
+        Prüft die durchschnittliche Arbeitszeit der letzten 6 Monate (24 Wochen).
+        Erstellt eine Benachrichtigung (Code 4), wenn der Durchschnitt 8 Stunden überschreitet.
+        """
+        if self.aktueller_nutzer_id is None:
+            return
+
+    
+        end_datum = date.today() - timedelta(days=1)
+        start_datum = end_datum - timedelta(weeks=24)
+
+
+        stmt = select(Zeiteintrag).where(
+            (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+            (Zeiteintrag.datum >= start_datum) &
+            (Zeiteintrag.datum <= end_datum)
+        ).order_by(Zeiteintrag.datum, Zeiteintrag.zeit)
+        
+        einträge = session.scalars(stmt).all()
+
+        if not einträge:
+            return
+
+        # Arbeitsstunden pro Tag berechnen
+        arbeitstage = {}
+        i = 0
+        while i < len(einträge) - 1:
+            calc = CalculateTime(einträge[i], einträge[i + 1])
+            if calc:
+                calc.gesetzliche_pausen_hinzufügen()
+                if calc.datum in arbeitstage:
+                    arbeitstage[calc.datum] += calc.gearbeitete_zeit
+                else:
+                    arbeitstage[calc.datum] = calc.gearbeitete_zeit
+                i += 2
+            else:
+                i += 1
+        
+        # Nur Tage mit Einträgen für die Durchschnittsberechnung berücksichtigen
+        if not arbeitstage:
+            return
+
+      
+        gesamte_arbeitszeit = sum(arbeitstage.values(), timedelta())
+        anzahl_arbeitstage = len(arbeitstage)
+        
+        durchschnittliche_arbeitszeit = gesamte_arbeitszeit / anzahl_arbeitstage
+
+       
+        if durchschnittliche_arbeitszeit > timedelta(hours=8):
+            
+       
+            exists_stmt = select(Benachrichtigungen).where(
+                (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Benachrichtigungen.benachrichtigungs_code == 4) &
+                (Benachrichtigungen.datum == date.today())
+            )
+            exists = session.execute(exists_stmt).scalar_one_or_none()
+
+            if not exists:
+                benachrichtigung = Benachrichtigungen(
+                    mitarbeiter_id=self.aktueller_nutzer_id,
+                    benachrichtigungs_code=4,
+                    datum=date.today()  # Datum der Prüfung
+                )
+                session.add(benachrichtigung)
+                session.commit()
+
+    def checke_max_arbeitszeit(self):
+        stmt = select(Zeiteintrag).where(
+            (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+            (Zeiteintrag.validiert == 0) &
+            (Zeiteintrag.datum <= date.today() - timedelta(days=1))
+        ).order_by(Zeiteintrag.datum, Zeiteintrag.zeit)
+        einträge = session.scalars(stmt).all()
+        tage = {}
+
+        for daten in einträge:
+            if daten.datum in tage:
+                continue
+            else:
+                tage[daten.datum] = 0
+
+        for dates in tage.keys():
+            stmt = select(Zeiteintrag).where(
+            (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+            (Zeiteintrag.datum == dates)
+        ).order_by(Zeiteintrag.datum, Zeiteintrag.zeit)
+            einträge = session.scalars(stmt).all()
+            i = 0
+            while i < len(einträge) - 1:
+                calc = CalculateTime(einträge[i], einträge[i+1])
+                if calc:
+        
+                    if calc.datum in tage:
+                        calc.gesetzliche_pausen_hinzufügen()
+                        tage[calc.datum] += calc.gearbeitete_zeit
+                    else:
+                        calc.gesetzliche_pausen_hinzufügen()
+                        tage[calc.datum] = calc.gearbeitete_zeit
+
+
+                    i += 2  
+                else:
+                    i += 1
+
+        for datum, arbeitszeit in tage.items():
+            if arbeitszeit > timedelta(hours=10):
+                exists_stmt = select(Benachrichtigungen).where(
+                    (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
+                    (Benachrichtigungen.benachrichtigungs_code == 5) &
+                    (Benachrichtigungen.datum == datum)
+                )
+                exists = session.execute(exists_stmt).scalar_one_or_none()
+
+                if not exists:
+                    benachrichtigung = Benachrichtigungen(
+                        mitarbeiter_id=self.aktueller_nutzer_id,
+                        benachrichtigungs_code=5,
+                        datum=datum  # Datum der Prüfung
+                    )
+                    session.add(benachrichtigung)
+                    session.commit()
+
 
     def berechne_gleitzeit(self):
         stmt = select(Zeiteintrag).where(
@@ -439,11 +597,11 @@ class ModellTrackTime():
              unvalidierte_stmt = select(Zeiteintrag).where(
                 (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
                 (Zeiteintrag.datum == datum) &
-                (Zeiteintrag.validiert == 0)
+                (Zeiteintrag.validiert == 1)
             )
              unvalidierte = session.execute(unvalidierte_stmt).scalars().all()
         
-             if not exists and not unvalidierte: 
+             if (not exists) and (not unvalidierte): 
                 arbeitstage[datum] -= tägliche_arbeitszeit
 
 
@@ -551,6 +709,8 @@ class ModellTrackTime():
             "anzahl_tage": len(gleitzeit_differenzen),
             "berücksichtigte_tage": berücksichtigte_tage
         }
+    
+
 
 
 

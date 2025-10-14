@@ -658,53 +658,35 @@ class MonthCalendar(BoxLayout):
     def add_time_row(self, stempelzeit: str):
         """Fügt eine neue Zeile in die Detail-Tabelle hinzu, basierend auf einer einzelnen Stempelzeit."""
 
-        # Datum automatisch vom aktuellen Kalendertag holen (z. B. vom Label)
-        date_text = ""
+        # Layout für eine Zeile (Zeit + Button)
+        row_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=30, spacing=10)
 
-        # Nur die Zeit anzeigen (z. B. '08:30')
-        times_text = stempelzeit
-
-        # Gleitzeit bleibt leer (wird evtl. später berechnet)
-        gleitzeit_text = ""
-
-        # Datum
-        date_label = self.aligned_label(
-            text=date_text,
-            color=(0, 0, 0, 1),
-            halign="left",
-            valign="top"
-        )
-
-        # Gestempelte Zeit
+        # Gestempelte Zeit als Label
         times_label = self.aligned_label(
-            text=times_text,
+            text=stempelzeit,
             color=(0, 0, 0, 1),
             halign="left",
-            valign="top"
-        )
-
-        # Gleitzeit (leer)
-        gleitzeit_label = self.aligned_label(
-            text=gleitzeit_text,
-            color=(0, 0, 0, 1),
-            halign="left",
-            valign="top"
+            valign="middle",
+            size_hint_x=1  # Nimmt den restlichen Platz ein
         )
 
         # Bearbeiten-Button
-        edit_btn_container = AnchorLayout(anchor_x="right", anchor_y="top")
-        edit_btn = MDIconButton(
+        edit_button = MDIconButton(
             icon="pencil",
             theme_text_color="Custom",
-            text_color=(0, 0, 0, 1)
+            text_color=(0, 0, 0, 1),
+            size_hint_x=None,
+            width=30
         )
-        edit_btn_container.add_widget(edit_btn)
+        # Hier kannst du später eine Funktion binden, z.B.:
+        # edit_button.bind(on_press=lambda instance, zeit=stempelzeit: self.edit_entry(zeit))
 
-        # Widgets in Tabelle einfügen
-        self.detail_table.add_widget(date_label)
-        self.detail_table.add_widget(times_label)
-        self.detail_table.add_widget(gleitzeit_label)
-        self.detail_table.add_widget(edit_btn_container)
+        row_layout.add_widget(times_label)
+        row_layout.add_widget(edit_button)
+
+        # Die ganze Zeile (Layout) zur times_box hinzufügen
+        self.times_box.add_widget(row_layout)
+
 
     def open_edit_popup(self, date):
         """Popup zum Bearbeiten öffnen"""

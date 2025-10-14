@@ -26,6 +26,7 @@ cursor.executescript('''
                 mitarbeiter_id INTEGER NOT NULL REFERENCES users(mitarbeiter_id),
                 benachrichtigungs_code INTEGER NOT NULL, 
                 datum DATE 
+            );
         CREATE TABLE IF NOT EXISTS abwesenheiten (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 mitarbeiter_id INTEGER NOT NULL REFERENCES users(mitarbeiter_id),
