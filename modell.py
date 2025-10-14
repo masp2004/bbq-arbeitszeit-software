@@ -511,7 +511,7 @@ class ModellTrackTime():
         for dates in tage.keys():
             stmt = select(Zeiteintrag).where(
             (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
-            (Zeiteintrag.datum <= dates)
+            (Zeiteintrag.datum == dates)
         ).order_by(Zeiteintrag.datum, Zeiteintrag.zeit)
             einträge = session.scalars(stmt).all()
             i = 0
