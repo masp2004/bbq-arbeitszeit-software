@@ -1,7 +1,6 @@
 # Test Suite
 
-Diese vereinfachte Test-Suite konzentriert sich auf Kernbereiche der Geschäftslogik, die ohne eine vollständige SQLAlchemy-
-Installation überprüft werden können.
+Diese vereinfachte Test-Suite konzentriert sich auf Kernbereiche der Geschäftslogik, die ohne eine vollständige SQLAlchemy-Installation überprüft werden können.
 
 ## Übersicht
 
