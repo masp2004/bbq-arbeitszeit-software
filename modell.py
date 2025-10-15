@@ -102,7 +102,7 @@ if SQLALCHEMY_AVAILABLE:
             2.2: "fehlt ein Stempel, bitte tragen sie diesen nach",
             3: ["Achtung, am", "wurden die gesetzlichen Ruhezeiten nicht eingehalten"],
             4: "Achtung, Ihre durchschnittliche tägliche Arbeitszeit der letzten 6 Monate hat 8 Stunden überschritten.",
-            5: ["Achtung am", "wurde die maximale gesetzlich zulässsige Arbeitszeit überschritten."],
+            5: ["Achtung am", "wurde die maximale gesetzlich zulässige Arbeitszeit überschritten."],
         }
 
         __table_args__ = (
