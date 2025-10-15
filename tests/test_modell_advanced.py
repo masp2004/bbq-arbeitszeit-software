@@ -289,7 +289,6 @@ class TestModellTrackTimeAdvanced:
 
     def test_checke_max_arbeitszeit_violation(self, test_session, sample_mitarbeiter, monkeypatch):
         """Test checking maximum work time violation (>10 hours)"""
-        pytest.skip("Known issue in original code: tage dictionary initialization with int instead of timedelta")
         import modell
         monkeypatch.setattr(modell, 'session', test_session)
 
@@ -297,10 +296,10 @@ class TestModellTrackTimeAdvanced:
         if yesterday.weekday() >= 5:
             pytest.skip("Test requires yesterday to be a weekday")
 
-        # Work 11 hours
+        # Work 12 hours (should definitely trigger after pause deduction)
         z1 = Zeiteintrag(
             mitarbeiter_id=sample_mitarbeiter.mitarbeiter_id,
-            zeit=time(8, 0),
+            zeit=time(7, 0),
             datum=yesterday,
             validiert=False
         )

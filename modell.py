@@ -506,7 +506,7 @@ class ModellTrackTime():
             if daten.datum in tage:
                 continue
             else:
-                tage[daten.datum] = 0
+                tage[daten.datum] = timedelta(0)
 
         for dates in tage.keys():
             stmt = select(Zeiteintrag).where(
