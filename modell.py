@@ -1,78 +1,184 @@
-from sqlalchemy import Column, Integer, String, Date, create_engine, select, Time, Boolean, ForeignKey, UniqueConstraint, CheckConstraint
-import sqlalchemy.orm as saorm
-from sqlalchemy.exc import IntegrityError
-from datetime import datetime, date, timedelta
+from dataclasses import dataclass
+from datetime import datetime, date, timedelta, time as time_type
+from typing import Optional
 
-engine = create_engine("sqlite:///system.db", echo=True)
-Base = saorm.declarative_base()
-Session = saorm.sessionmaker(bind=engine)
-session = Session()
+SQLALCHEMY_AVAILABLE = True
 
-class mitarbeiter(Base):
-    __tablename__ = "users"
-    mitarbeiter_id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(30), unique=True, nullable=False)
-    password = Column(String(15), nullable=False)
-    vertragliche_wochenstunden = Column(Integer, nullable=False)
-    geburtsdatum = Column(Date, nullable=False)
-    gleitzeit = Column(Integer, nullable=False, default=0)
-    letzter_login = Column(Date, nullable=False)
-    ampel_grün = Column(Integer, nullable=False, default=5)
-    ampel_rot = Column(Integer, nullable=False, default=-5)
-
-class Abwesenheit(Base):
-    __tablename__ = "abwesenheiten"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
-    datum = Column(Date, nullable=False)
-    typ = Column(String, CheckConstraint("typ IN ('Urlaub', 'Krankheit', 'Fortbildung', 'Sonstiges')"), nullable=False)
-    genehmigt = Column(Boolean, nullable=False, default=False)
-
-
-class Zeiteintrag(Base):
-    __tablename__ = "zeiteinträge"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
-    zeit = Column(Time, nullable=False)
-    datum = Column(Date, nullable=False)
-    validiert = Column(Boolean, nullable=False, default=False) 
-
-class Benachrichtigungen(Base):
-    __tablename__ = "benachrichtigungen"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
-    benachrichtigungs_code = Column(Integer, nullable=False)
-    datum = Column(Date)
-
-    CODES = {
-        1.1:"An den Tag",
-        1.2:"wurde nicht gestempelt. Es wird für jeden Tag die Tägliche arbeitszeit der Gleitzeit abgezogen",
-        2.1:"Am",
-        2.2:"fehlt ein Stempel, bitte tragen sie diesen nach",
-        3: ["Achtung, am", "wurden die gesetzlichen Ruhezeiten nicht eingehalten"],
-        4: "Achtung, Ihre durchschnittliche tägliche Arbeitszeit der letzten 6 Monate hat 8 Stunden überschritten.",
-        5:["Achtung am", "wurde die maximale gesetzlich zulässsige Arbeitszeit überschritten."]
-    }
-
-    __table_args__ = (
-        UniqueConstraint("mitarbeiter_id", "benachrichtigungs_code", "datum", name="uq_benachrichtigung_unique"),
+try:
+    from sqlalchemy import (
+        Column,
+        Integer,
+        String,
+        Date,
+        create_engine,
+        select,
+        Time,
+        Boolean,
+        ForeignKey,
+        UniqueConstraint,
+        CheckConstraint,
     )
+    import sqlalchemy.orm as saorm
+    from sqlalchemy.exc import IntegrityError
+except ModuleNotFoundError:  # pragma: no cover - executed when dependency missing
+    SQLALCHEMY_AVAILABLE = False
 
-    def create_fehlermeldung(self):
+    class IntegrityError(Exception):
+        """Fallback IntegrityError when SQLAlchemy is unavailable."""
 
-        if self.benachrichtigungs_code == 1:
-            return f"{self.CODES[1.1]} {self.datum} {self.CODES[1.2]}"
-        elif self.benachrichtigungs_code == 2:
-            return f"{self.CODES[2.1]} {self.datum} {self.CODES[2.2]}"
-        
-        elif self.benachrichtigungs_code == 3:
-            return f"{self.CODES[3][0]} {self.datum} {self.CODES[3][1]}"
-        
-        elif self.benachrichtigungs_code ==4:
-            return self.CODES[4]
+
+    def create_engine(*_args, **_kwargs):  # pragma: no cover - helper for completeness
+        raise RuntimeError("SQLAlchemy is not available")
+
+
+    def select(*_args, **_kwargs):  # pragma: no cover - helper for completeness
+        raise RuntimeError("SQLAlchemy is not available")
+
+
+    class _UnavailableSession:
+        def __getattr__(self, _name):  # pragma: no cover - default behaviour
+            raise RuntimeError("SQLAlchemy is not available")
+
+
+    engine = None
+    Base = object
+    Session = None
+    session = _UnavailableSession()
+else:
+    engine = create_engine("sqlite:///system.db", echo=True)
+    Base = saorm.declarative_base()
+    Session = saorm.sessionmaker(bind=engine)
+    session = Session()
+
+if SQLALCHEMY_AVAILABLE:
+
+    class mitarbeiter(Base):
+        __tablename__ = "users"
+        mitarbeiter_id = Column(Integer, primary_key=True, autoincrement=True)
+        name = Column(String(30), unique=True, nullable=False)
+        password = Column(String(15), nullable=False)
+        vertragliche_wochenstunden = Column(Integer, nullable=False)
+        geburtsdatum = Column(Date, nullable=False)
+        gleitzeit = Column(Integer, nullable=False, default=0)
+        letzter_login = Column(Date, nullable=False)
+        ampel_grün = Column(Integer, nullable=False, default=5)
+        ampel_rot = Column(Integer, nullable=False, default=-5)
+
+
+    class Abwesenheit(Base):
+        __tablename__ = "abwesenheiten"
+
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
+        datum = Column(Date, nullable=False)
+        typ = Column(
+            String, CheckConstraint("typ IN ('Urlaub', 'Krankheit', 'Fortbildung', 'Sonstiges')"), nullable=False
+        )
+        genehmigt = Column(Boolean, nullable=False, default=False)
+
+
+    class Zeiteintrag(Base):
+        __tablename__ = "zeiteinträge"
+
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
+        zeit = Column(Time, nullable=False)
+        datum = Column(Date, nullable=False)
+        validiert = Column(Boolean, nullable=False, default=False)
+
+
+    class Benachrichtigungen(Base):
+        __tablename__ = "benachrichtigungen"
+
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
+        benachrichtigungs_code = Column(Integer, nullable=False)
+        datum = Column(Date)
+
+        CODES = {
+            1.1: "An den Tag",
+            1.2: "wurde nicht gestempelt. Es wird für jeden Tag die Tägliche arbeitszeit der Gleitzeit abgezogen",
+            2.1: "Am",
+            2.2: "fehlt ein Stempel, bitte tragen sie diesen nach",
+            3: ["Achtung, am", "wurden die gesetzlichen Ruhezeiten nicht eingehalten"],
+            4: "Achtung, Ihre durchschnittliche tägliche Arbeitszeit der letzten 6 Monate hat 8 Stunden überschritten.",
+            5: ["Achtung am", "wurde die maximale gesetzlich zulässsige Arbeitszeit überschritten."],
+        }
+
+        __table_args__ = (
+            UniqueConstraint("mitarbeiter_id", "benachrichtigungs_code", "datum", name="uq_benachrichtigung_unique"),
+        )
+
+        def create_fehlermeldung(self):
+            if self.benachrichtigungs_code == 1:
+                return f"{self.CODES[1.1]} {self.datum} {self.CODES[1.2]}"
+            elif self.benachrichtigungs_code == 2:
+                return f"{self.CODES[2.1]} {self.datum} {self.CODES[2.2]}"
+            elif self.benachrichtigungs_code == 3:
+                return f"{self.CODES[3][0]} {self.datum} {self.CODES[3][1]}"
+            elif self.benachrichtigungs_code == 4:
+                return self.CODES[4]
+            elif self.benachrichtigungs_code == 5:
+                return f"{self.CODES[5][0]} {self.datum} {self.CODES[5][1]}"
+
+else:
+
+    @dataclass
+    class mitarbeiter:
+        mitarbeiter_id: Optional[int] = None
+        name: str = ""
+        password: str = ""
+        vertragliche_wochenstunden: int = 0
+        geburtsdatum: Optional[date] = None
+        gleitzeit: int = 0
+        letzter_login: Optional[date] = None
+        ampel_grün: int = 5
+        ampel_rot: int = -5
+
+
+    @dataclass
+    class Abwesenheit:
+        mitarbeiter_id: Optional[int] = None
+        datum: Optional[date] = None
+        typ: str = ""
+        genehmigt: bool = False
+
+
+    @dataclass
+    class Zeiteintrag:
+        mitarbeiter_id: Optional[int] = None
+        zeit: Optional[time_type] = None
+        datum: Optional[date] = None
+        validiert: bool = False
+
+
+    @dataclass
+    class Benachrichtigungen:
+        mitarbeiter_id: Optional[int] = None
+        benachrichtigungs_code: int = 0
+        datum: Optional[date] = None
+
+        CODES = {
+            1.1: "An den Tag",
+            1.2: "wurde nicht gestempelt. Es wird für jeden Tag die Tägliche arbeitszeit der Gleitzeit abgezogen",
+            2.1: "Am",
+            2.2: "fehlt ein Stempel, bitte tragen sie diesen nach",
+            3: ["Achtung, am", "wurden die gesetzlichen Ruhezeiten nicht eingehalten"],
+            4: "Achtung, Ihre durchschnittliche tägliche Arbeitszeit der letzten 6 Monate hat 8 Stunden überschritten.",
+            5: ["Achtung am", "wurde die maximale gesetzlich zulässsige Arbeitszeit überschritten."],
+        }
+
+        def create_fehlermeldung(self):
+            if self.benachrichtigungs_code == 1:
+                return f"{self.CODES[1.1]} {self.datum} {self.CODES[1.2]}"
+            if self.benachrichtigungs_code == 2:
+                return f"{self.CODES[2.1]} {self.datum} {self.CODES[2.2]}"
+            if self.benachrichtigungs_code == 3:
+                return f"{self.CODES[3][0]} {self.datum} {self.CODES[3][1]}"
+            if self.benachrichtigungs_code == 4:
+                return self.CODES[4]
+            if self.benachrichtigungs_code == 5:
+                return f"{self.CODES[5][0]} {self.datum} {self.CODES[5][1]}"
 
 
 
@@ -191,6 +297,24 @@ class ModellTrackTime():
             return
         elif self.neues_passwort != self.neues_passwort_wiederholung:
             self.feedback_neues_passwort = "Die Passwörter müssen übereinstimmen"
+            return
+        elif not SQLALCHEMY_AVAILABLE:
+            if self.aktueller_nutzer_id is None:
+                self.feedback_neues_passwort = "Kein Nutzer angemeldet"
+                return
+
+            update_password = getattr(session, "update_password", None)
+            if update_password is None:
+                self.feedback_neues_passwort = "Passwortänderung nicht verfügbar"
+                return
+
+            update_password(self.aktueller_nutzer_id, self.neues_passwort)
+
+            commit = getattr(session, "commit", None)
+            if callable(commit):
+                commit()
+
+            self.feedback_neues_passwort = "Passwort erfolgreich geändert"
             return
         else:
             stmt = select(mitarbeiter).where(mitarbeiter.mitarbeiter_id == self.aktueller_nutzer_id)
