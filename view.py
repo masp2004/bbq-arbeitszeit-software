@@ -18,6 +18,7 @@ from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.popup import Popup
 from kivy.graphics import Color, Rectangle, Line, Ellipse
 from kivy.uix.image import Image
+from kivy.uix.checkbox import CheckBox
 
 
 class LoginView(Screen):
@@ -76,7 +77,7 @@ class RegisterView(Screen):
         super().__init__(**kwargs)
 
         self.width_window = 535
-        self.height_window = 380
+        self.height_window = 450
         self.date_picker = MDDatePicker()
 
         # Hauptlayout (alles untereinander)
@@ -122,6 +123,22 @@ class RegisterView(Screen):
             multiline=False,
             height=40
         )
+        self.reg_limit_green = TabTextInput(
+            multiline=False,
+            size_hint_y=None,
+            height=40
+        )
+        self.reg_limit_red = TabTextInput(
+            multiline=False,
+            size_hint_y=None,
+            height=40
+        )
+        self.reg_superior = TabTextInput(
+            multiline=False,
+            hint_text="Name des Vorgesetzten",
+            size_hint_y=None,
+            height=40
+        )
 
         grid.add_widget(Label(
             text="Vor- und Nachname:", size_hint=(None, None), size=(230, 40), text_size=(230, 40),
@@ -148,6 +165,28 @@ class RegisterView(Screen):
             halign="left", valign="middle")
         )
         grid.add_widget(self.reg_geburtsdatum)
+        grid.add_widget(Label(
+            text="Grenzwerte:", size_hint=(None, None), size=(230, 40), text_size=(230, 40),
+            halign="left", valign="middle")
+        )
+        limit_layout = BoxLayout(spacing=10)
+        limit_layout.add_widget(Label(
+            text="grün:", size_hint=(None, None), size=(40, 40), text_size=(40, 40),
+            halign="right", valign="middle")
+        )
+        limit_layout.add_widget(self.reg_limit_green)
+        
+        limit_layout.add_widget(Label(
+            text="rot:", size_hint=(None, None), size=(30, 40), text_size=(30, 40),
+            halign="right", valign="middle")
+        )
+        limit_layout.add_widget(self.reg_limit_red)
+        grid.add_widget(limit_layout)
+        grid.add_widget(Label(
+            text="Vorgesetzte/r:", size_hint=(None, None), size=(230, 40), text_size=(230, 40),
+            halign="left", valign="middle")
+        )
+        grid.add_widget(self.reg_superior)
         
         self.layout.add_widget(grid)
 
@@ -176,6 +215,9 @@ class RegisterView(Screen):
         self.reg_username_input.focus_next = self.reg_password_input
         self.reg_password_input.focus_next = self.reg_password_input_rep
         self.reg_password_input_rep.focus_next = self.reg_geburtsdatum
+        self.reg_limit_green.focus_next = self.reg_limit_red
+        self.reg_limit_red.focus_next = self.reg_superior
+        self.reg_superior.focus_next = self.reg_username_input
 
 
 class MainView(Screen):
@@ -226,13 +268,73 @@ class MainView(Screen):
         self.reihe_1.add_widget(self.anzeige_gleitzeit_wert_label)
         self.time_tracking_layout.add_widget(self.reihe_1)
 
+        # Anzeige der Gleitzeit
+        flexible_time_header = Label(
+            text="Kumulierte Gleitzeit",
+            size_hint=(None, None),
+            size=(220, 50),
+            text_size=(220, 50),
+            halign="left",
+            valign="bottom",
+            font_size=20
+        )
+        self.time_tracking_layout.add_widget(flexible_time_header)
 
+        flexible_time_grid = GridLayout(cols=2, spacing=10, size_hint_y=None, height=110)
+        flexible_time_grid.add_widget(Label(
+            text="Monat:",
+            size_hint=(None, None),
+            size=(70, 30),
+            text_size=(70, 30),
+            halign="left",
+            valign="middle"
+        ))
+        self.flexible_time_month = BorderedLabel(
+            size_hint=(None, None), size=(100, 30), text_size=(80, 30), halign="right", valign="middle"
+        )
+        flexible_time_grid.add_widget(self.flexible_time_month)
+        flexible_time_grid.add_widget(Label(
+            text="Quartal:",
+            size_hint=(None, None),
+            size=(70, 30),
+            text_size=(70, 30),
+            halign="left",
+            valign="middle"
+        ))
+        self.flexible_time_quarter = BorderedLabel(
+            size_hint=(None, None), size=(100, 30), text_size=(80, 30), halign="right", valign="middle"
+        )
+        flexible_time_grid.add_widget(self.flexible_time_quarter)
+        flexible_time_grid.add_widget(Label(
+            text="Jahr:",
+            size_hint=(None, None),
+            size=(70, 30),
+            text_size=(70, 30),
+            halign="left",
+            valign="middle"
+        ))
+        self.flexible_time_year = BorderedLabel(
+            size_hint=(None, None), size=(100, 30), text_size=(80, 30), halign="right", valign="middle"
+        )
+        flexible_time_grid.add_widget(self.flexible_time_year)
+        self.time_tracking_layout.add_widget(flexible_time_grid)
 
-        # --- Horizontale Buttons oder weitere Optionen (optional) ---
-        self.time_tracking_horizontal_layout = BoxLayout(orientation='horizontal', spacing=15, 
-                                                         size_hint_y=None, height=40)
-        # Beispiel: Weitere Buttons oder Filter
-        self.time_tracking_layout.add_widget(self.time_tracking_horizontal_layout)
+        # Zeile mit Checkbox und Label nebeneinander
+        checkbox_row = BoxLayout(spacing=10, size_hint_y=None, height=40)
+
+        self.checkbox = CheckBox(size_hint=(None, None), size=(30, 30), active=False)
+        checkbox_row.add_widget(self.checkbox)
+
+        checkbox_row.add_widget(Label(
+            text="Tage ohne Stempel berücksichtigen",
+            size_hint=(None, None),
+            size=(300, 30),
+            text_size=(300, 30),
+            halign="left",
+            valign="middle"
+        ))
+
+        self.time_tracking_layout.add_widget(checkbox_row)
 
         # Ampel
         self.ampel = TrafficLight()
@@ -256,8 +358,8 @@ class MainView(Screen):
         self.überschrift = Label(
             text="Manuelles Nachtragen von Zeitstempeln",
             size_hint=(1, None),
-            height=40,
-            halign="center",
+            height=30,
+            halign="left",
             valign="middle",
             font_size=20
         )
@@ -265,19 +367,19 @@ class MainView(Screen):
         self.zeitnachtrag_layout.add_widget(self.überschrift)
 
         # GridLayout nur mit Datum und Uhrzeit
-        self.grid = GridLayout(cols=2, padding=(0, 20, 0, 0), spacing=15, size_hint_y=None, height=140)
+        self.grid = GridLayout(cols=2, padding=(0, 10, 0, 0), spacing=15, size_hint_y=None, height=120)
 
         # Datum
-        self.grid.add_widget(Label(text="Datum: ", size_hint=(None, None), size=(80, 40),
-                                text_size=(80, 40), halign="left", valign="middle"))
+        self.grid.add_widget(Label(text="Datum: ", size_hint=(None, None), size=(60, 40),
+                                text_size=(60, 40), halign="left", valign="middle"))
         self.date_input = TextInput(hint_text="TT/MM/JJJJ", size_hint=(None, None),
                                     size=(300, 40), readonly=True, multiline=False)
 
         self.grid.add_widget(self.date_input)
 
         # Uhrzeit
-        self.grid.add_widget(Label(text="Uhrzeit: ", size_hint=(None, None), size=(80, 40),
-                                text_size=(80, 40), halign="left", valign="middle"))
+        self.grid.add_widget(Label(text="Uhrzeit: ", size_hint=(None, None), size=(60, 40),
+                                text_size=(60, 40), halign="left", valign="middle"))
         self.time_input = TextInput(hint_text="HH:MM", size_hint=(None, None),
                                     size=(300, 40), readonly=True, multiline=False)
         self.grid.add_widget(self.time_input)
@@ -311,22 +413,10 @@ class MainView(Screen):
 
         self.benachrichtigungen_tab = TabbedPanelItem(text="Benachrichtigungen")
 
-        # --- Hauptlayout ---
+        # Hauptlayout
         main_layout = BoxLayout(orientation='vertical', padding=20, spacing=15)
 
-        # Überschrift
-        header_label = Label(
-            text="Benachrichtigungen",
-            size_hint=(1, None),
-            height=40,
-            font_size=20,
-            halign="center",
-            valign="middle"
-        )
-        header_label.bind(size=header_label.setter("text_size"))
-        main_layout.add_widget(header_label)
-
-        # --- Scrollbarer Bereich ---
+        # Scrollbarer Bereich
         scroll_view = ScrollView(size_hint=(1, 1))
 
         # GridLayout für Benachrichtigungen
@@ -865,3 +955,25 @@ class TabTextInput(TextInput):
                 self.focus_next.focus = True
             return True  # Event abfangen (kein Tab-Zeichen einfügen)
         return super().keyboard_on_key_down(window, keycode, text, modifiers)
+    
+
+class BorderedLabel(Label):
+    """Label mit sichtbarem Rand"""
+
+    def __init__(self, **kwargs):
+        """Initialisiert das BorderedLabel"""
+
+        super().__init__(**kwargs)
+
+        # Rand
+        with self.canvas.after:
+            self.border_color = Color(0.5, 0.5, 0.5, 1)
+            self.border_line = Line(rectangle=(self.x, self.y, self.width, self.height), width=1)
+
+        # Aktualisieren, wenn sich etwas ändert
+        self.bind(pos=self.update_graphics, size=self.update_graphics)
+
+    def update_graphics(self, *args):
+        """Aktualisiert Position, Größe und Rahmen"""
+        
+        self.border_line.rectangle = (self.x, self.y, self.width, self.height)
