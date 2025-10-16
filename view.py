@@ -786,7 +786,11 @@ class MonthCalendar(BoxLayout):
     """
 
     def __init__(self):
-        '''Initialisiert die Monatsansicht des Kalenders'''
+        """
+        Initialisiert die Monatsansicht des Kalenders.
+        
+        Setzt das aktuelle Jahr und den aktuellen Monat.
+        """
         
         super().__init__(orientation="vertical")
         today = datetime.date.today()
@@ -796,7 +800,12 @@ class MonthCalendar(BoxLayout):
         self.build_ui()
 
     def build_ui(self):
-        '''Erstellt die UI-Komponenten'''
+        """
+        Erstellt die UI-Komponenten des Kalenders.
+        
+        Baut das komplette Layout mit Mitarbeiter-Auswahl, Monatsnavigation,
+        Kalendergrid und Detail-Tabelle auf.
+        """
 
         self.clear_widgets()
 
@@ -865,7 +874,12 @@ class MonthCalendar(BoxLayout):
         self.add_widget(self.detail_table)
 
     def change_month(self, delta):
-        """Wechselt den angezeigten Monat"""
+        """
+        Wechselt den angezeigten Monat.
+        
+        Args:
+            delta (int): +1 für nächsten Monat, -1 für vorherigen Monat
+        """
 
         self.month += delta
         if self.month < 1:
@@ -878,12 +892,21 @@ class MonthCalendar(BoxLayout):
         self.fill_grid_with_days()
 
     def title_text(self):
-        """Gibt den Titel für den aktuellen Monat zurück"""
+        """
+        Gibt den Titel für den aktuellen Monat zurück.
+        
+        Returns:
+            str: Monatsname und Jahr, z.B. "Januar 2024"
+        """
 
         return datetime.date(self.year, self.month, 1).strftime("%B %Y")
 
     def fill_grid_with_days(self):
-        """Füllt das Grid mit den Tagen des Monats"""
+        """
+        Füllt das Kalender-Grid mit den Tagen des Monats.
+        
+        Erstellt für jeden Tag eine DayCell und bindet Click-Events.
+        """
 
         self.grid.clear_widgets()
         cal = calendar.Calendar(firstweekday=0)
@@ -900,14 +923,27 @@ class MonthCalendar(BoxLayout):
             self.grid.add_widget(cell)
 
     def aligned_label(self, **kwargs):
-        """Hilfsfunktion für Labels mit Textausrichtung"""
+        """
+        Hilfsfunktion zur Erstellung von Labels mit Textausrichtung.
+        
+        Args:
+            **kwargs: Keyword-Argumente für Label
+            
+        Returns:
+            Label: Konfiguriertes Label-Widget
+        """
 
         lbl = Label(**kwargs)
         lbl.bind(size=lbl.setter("text_size"))
         return lbl
     
     def on_day_selected(self, date):
-        """Wird aufgerufen, wenn ein Tag angeklickt wurde"""
+        """
+        Wird aufgerufen, wenn ein Tag angeklickt wurde.
+        
+        Args:
+            date (datetime.date): Ausgewähltes Datum
+        """
 
         self.date_label.text = date.strftime("%d.%m.%Y")
         self.times_box.clear_widgets()
@@ -916,7 +952,12 @@ class MonthCalendar(BoxLayout):
             self.day_selected_callback(date)
 
     def add_time_row(self, stempelzeit: str):
-        """Fügt eine neue Zeile in die Detail-Tabelle hinzu, basierend auf einer einzelnen Stempelzeit."""
+        """
+        Fügt eine Zeile mit einer Stempelzeit zur Detail-Tabelle hinzu.
+        
+        Args:
+            stempelzeit (str): Formatierte Stempelzeit (z.B. "08:30")
+        """
 
         # Layout für eine Zeile (Zeit + Button)
         row_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=30, spacing=10)
@@ -949,7 +990,15 @@ class MonthCalendar(BoxLayout):
 
 
     def open_edit_popup(self, date):
-        """Popup zum Bearbeiten öffnen"""
+        """
+        Öffnet ein Popup zum Bearbeiten von Zeiteinträgen.
+        
+        Args:
+            date (datetime.date): Datum, für das Einträge bearbeitet werden sollen
+            
+        Returns:
+            self: Popup-Instanz für weitere Konfiguration
+        """
 
         popup_layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
 
@@ -985,7 +1034,16 @@ class MonthCalendar(BoxLayout):
         return self
 
     def add_entry(self, from_time="", to_time=""):
-        """Fügt eine neue Zeile für einen Eintrag hinzu"""
+        """
+        Fügt eine neue Zeile für einen Zeiteintrag im Popup hinzu.
+        
+        Args:
+            from_time (str): Startzeit (optional)
+            to_time (str): Endzeit (optional)
+            
+        Returns:
+            tuple: (entry_row, delete_btn) für weitere Konfiguration
+        """
 
         entry_row = BoxLayout(size_hint_y=None, height=30, spacing=15)
         from_input = TextInput(text=from_time, multiline=False, size_hint=(None, None), size=(80, 30))
@@ -1002,10 +1060,20 @@ class MonthCalendar(BoxLayout):
 
 
 class LinedGridLayout(GridLayout):
-    '''GridLayout mit Linien zwischen den Zellen'''
+    """
+    GridLayout mit visuellen Linien zwischen den Zellen.
+    
+    Zeichnet automatisch Hintergrund und Trennlinien für eine tabellarische
+    Darstellung.
+    """
 
     def __init__(self, **kwargs):
-        '''Initialisiert das LinedGridLayout'''
+        """
+        Initialisiert das LinedGridLayout.
+        
+        Args:
+            **kwargs: Keyword-Argumente für GridLayout
+        """
 
         super().__init__(**kwargs)
 
@@ -1013,7 +1081,12 @@ class LinedGridLayout(GridLayout):
         self.bind(size=self._update_lines, pos=self._update_lines)
 
     def _update_background(self, *args):
-        """Hintergrundfarbe zeichnen"""
+        """
+        Zeichnet die Hintergrundfarbe.
+        
+        Args:
+            *args: Event-Argumente
+        """
 
         self.canvas.before.clear()
         with self.canvas.before:
@@ -1021,7 +1094,12 @@ class LinedGridLayout(GridLayout):
             Rectangle(pos=self.pos, size=self.size)
 
     def _update_lines(self, *args):
-        """Linien zwischen den Zellen zeichnen"""
+        """
+        Zeichnet die Trennlinien zwischen den Zellen.
+        
+        Args:
+            *args: Event-Argumente
+        """
 
         self.canvas.after.clear()
 
@@ -1040,10 +1118,25 @@ class LinedGridLayout(GridLayout):
 
 
 class DayCell(BoxLayout):
-    '''Einzelne Zelle im Kalender für einen Tag'''
+    """
+    Einzelne Kalender-Zelle für einen Tag.
+    
+    Zeigt die Tageszahl und kann Einträge für diesen Tag aufnehmen.
+    
+    Attributes:
+        rect (Rectangle): Hintergrund-Rechteck
+        line (Line): Rahmen der Zelle
+        entries_box (BoxLayout): Container für Tag-Einträge
+    """
 
     def __init__(self, day_number, in_month=True):
-        '''Initialisiert eine Zelle für einen Tag'''
+        """
+        Initialisiert eine Kalender-Zelle für einen Tag.
+        
+        Args:
+            day_number (int): Tageszahl
+            in_month (bool): True wenn Tag im aktuellen Monat, False für Nachbar-Monate
+        """
 
         super().__init__(orientation="vertical", padding=2, spacing=2)
         self.size_hint_y = None
@@ -1080,14 +1173,24 @@ class DayCell(BoxLayout):
         self.add_widget(self.entries_box)
 
     def _update_graphics(self, *args):
-        """Aktualisiert die Hintergrundgrafik und den Rahmen"""
+        """
+        Aktualisiert die Hintergrundgrafik und den Rahmen.
+        
+        Args:
+            *args: Event-Argumente
+        """
 
         self.rect.pos = self.pos
         self.rect.size = self.size
         self.line.rectangle = (self.x, self.y, self.width, self.height)
 
     def add_entry(self, entry_text):
-        """Fügt einen Eintrag als Label hinzu"""
+        """
+        Fügt einen Eintrag als Label zur Zelle hinzu.
+        
+        Args:
+            entry_text (str): Text des Eintrags
+        """
 
         lbl = Label(
             text=entry_text,
@@ -1099,7 +1202,12 @@ class DayCell(BoxLayout):
             rect = Rectangle(size=lbl.size, pos=lbl.pos)
 
         def update_background(*args):
-            """Aktualisiert die Hintergrundrechteckgröße und -position"""
+            """
+            Aktualisiert die Hintergrundrechteckgröße und -position.
+            
+            Args:
+                *args: Event-Argumente
+            """
 
             rect.pos = lbl.pos
             rect.size = lbl.size
@@ -1109,16 +1217,42 @@ class DayCell(BoxLayout):
 
 
 class TabTextInput(TextInput):
-    """Beim Drücken der Tab-Taste im TextInput-Feld wird der Fokus auf das nächste Eingabefeld gesetzt"""
+    """
+    TextInput-Feld mit Tab-Navigation.
+    
+    Erweitert TextInput um die Möglichkeit, mit der Tab-Taste zum
+    nächsten Eingabefeld zu springen (statt Tab-Zeichen einzufügen).
+    
+    Attributes:
+        focus_next: Nächstes Eingabefeld für Tab-Navigation
+    """
 
     def __init__(self, **kwargs):
-        """Initialisiert das TabTextInput-Feld"""
+        """
+        Initialisiert das TabTextInput-Feld.
+        
+        Args:
+            **kwargs: Keyword-Argumente für TextInput
+        """
 
         super().__init__(**kwargs)
         self.write_tab = False
 
     def keyboard_on_key_down(self, window, keycode, text, modifiers):
-        """Wird aufgerufen, wenn eine Taste gedrückt wird, während das TextInput-Feld den Fokus hat"""
+        """
+        Wird aufgerufen, wenn eine Taste gedrückt wird.
+        
+        Fängt die Tab-Taste ab und wechselt zum nächsten Eingabefeld.
+        
+        Args:
+            window: Kivy Window
+            keycode: Tuple mit (keycode, keyname)
+            text: Eingegebener Text
+            modifiers: Modifier-Tasten (Shift, Ctrl, etc.)
+            
+        Returns:
+            bool: True wenn Event behandelt wurde
+        """
 
         if keycode[1] == 'tab':
             if self.focus_next:
@@ -1128,10 +1262,23 @@ class TabTextInput(TextInput):
     
 
 class BorderedLabel(Label):
-    """Label mit sichtbarem Rand"""
+    """
+    Label mit sichtbarem Rahmen.
+    
+    Erweitert das Standard-Label um einen gezeichneten Rahmen.
+    
+    Attributes:
+        border_color (Color): Farbe des Rahmens
+        border_line (Line): Line-Objekt für den Rahmen
+    """
 
     def __init__(self, **kwargs):
-        """Initialisiert das BorderedLabel"""
+        """
+        Initialisiert das BorderedLabel.
+        
+        Args:
+            **kwargs: Keyword-Argumente für Label
+        """
 
         super().__init__(**kwargs)
 
@@ -1144,6 +1291,11 @@ class BorderedLabel(Label):
         self.bind(pos=self.update_graphics, size=self.update_graphics)
 
     def update_graphics(self, *args):
-        """Aktualisiert Position, Größe und Rahmen"""
+        """
+        Aktualisiert Position, Größe und Rahmen.
+        
+        Args:
+            *args: Event-Argumente
+        """
         
         self.border_line.rectangle = (self.x, self.y, self.width, self.height)
