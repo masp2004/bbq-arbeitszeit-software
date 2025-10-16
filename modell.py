@@ -639,10 +639,6 @@ class ModellTrackTime():
         Erstellt eine Benachrichtigung (Code 4), wenn der Durchschnitt der
         täglichen Arbeitszeit 8 Stunden überschreitet (gemäß ArbZG).
         """
-        """
-        Prüft die durchschnittliche Arbeitszeit der letzten 6 Monate (24 Wochen).
-        Erstellt eine Benachrichtigung (Code 4), wenn der Durchschnitt 8 Stunden überschreitet.
-        """
         if self.aktueller_nutzer_id is None:
             return
 
