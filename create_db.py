@@ -1,3 +1,15 @@
+"""
+Datenbank-Initialisierungsskript für die BBQ Arbeitszeit-Erfassungssoftware.
+
+Dieses Skript erstellt die SQLite-Datenbank mit allen notwendigen Tabellen:
+- users: Mitarbeiterdaten und Login-Informationen
+- zeiteinträge: Zeitstempel für Arbeitszeiterfassung
+- benachrichtigungen: Warnungen und Hinweise für Benutzer
+- abwesenheiten: Urlaubs- und Krankheitstage
+
+Führen Sie dieses Skript einmalig vor der ersten Verwendung aus.
+"""
+
 import sqlite3
 
 conn = sqlite3.connect('system.db')

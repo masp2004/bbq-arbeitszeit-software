@@ -1,3 +1,17 @@
+"""
+DEPRECATED: Alte Version der BBQ Arbeitszeit-Erfassungssoftware.
+
+Diese Datei ist veraltet und wird nicht mehr verwendet.
+Die aktuelle Anwendung verwendet:
+- main.py (Einstiegspunkt)
+- controller.py (Controller-Logik)
+- modell.py (Datenbank-Models und Geschäftslogik)
+- view.py (GUI-Komponenten)
+
+Behalten Sie diese Datei nur zu Referenzzwecken.
+Für die aktive Entwicklung verwenden Sie bitte die oben genannten Dateien.
+"""
+
 from datetime import datetime
 
 from kivy.uix.screenmanager import ScreenManager, Screen

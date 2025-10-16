@@ -1,3 +1,16 @@
+"""
+Model-Modul für die BBQ Arbeitszeit-Erfassungssoftware.
+
+Dieses Modul enthält die Datenbank-Models und Geschäftslogik für:
+- Benutzerverwaltung (Login, Registrierung)
+- Zeiterfassung (Stempel, Zeiteinträge)
+- Gleitzeitberechnung
+- Arbeitszeitgesetz (ArbZG)-Prüfungen
+- Benachrichtigungssystem
+
+Die Models verwenden SQLAlchemy ORM für die Datenbankinteraktion.
+"""
+
 from sqlalchemy import Column, Integer, String, Date, create_engine, select, Time, Boolean, ForeignKey, UniqueConstraint, CheckConstraint
 import sqlalchemy.orm as saorm
 from sqlalchemy.exc import IntegrityError
@@ -9,6 +22,23 @@ Session = saorm.sessionmaker(bind=engine)
 session = Session()
 
 class mitarbeiter(Base):
+    """
+    Datenbankmodell für Mitarbeiter/Benutzer.
+    
+    Speichert alle relevanten Informationen zu einem Mitarbeiter inklusive
+    Login-Daten, vertraglichen Arbeitsstunden und Gleitzeitkonto.
+    
+    Attributes:
+        mitarbeiter_id (int): Eindeutige ID (Primary Key)
+        name (str): Benutzername (unique, max 30 Zeichen)
+        password (str): Passwort (max 15 Zeichen)
+        vertragliche_wochenstunden (int): Vertraglich vereinbarte Wochenstunden
+        geburtsdatum (date): Geburtsdatum des Mitarbeiters
+        gleitzeit (int): Aktueller Gleitzeitstand in Stunden
+        letzter_login (date): Datum des letzten Logins
+        ampel_grün (int): Grenzwert für grüne Ampel (Standard: 5)
+        ampel_rot (int): Grenzwert für rote Ampel (Standard: -5)
+    """
     __tablename__ = "users"
     mitarbeiter_id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(30), unique=True, nullable=False)
@@ -21,6 +51,16 @@ class mitarbeiter(Base):
     ampel_rot = Column(Integer, nullable=False, default=-5)
 
 class Abwesenheit(Base):
+    """
+    Datenbankmodell für Abwesenheiten (Urlaub, Krankheit, etc.).
+    
+    Attributes:
+        id (int): Eindeutige ID (Primary Key)
+        mitarbeiter_id (int): Foreign Key zum Mitarbeiter
+        datum (date): Datum der Abwesenheit
+        typ (str): Art der Abwesenheit ('Urlaub', 'Krankheit', 'Fortbildung', 'Sonstiges')
+        genehmigt (bool): Status der Genehmigung (Standard: False)
+    """
     __tablename__ = "abwesenheiten"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -31,6 +71,19 @@ class Abwesenheit(Base):
 
 
 class Zeiteintrag(Base):
+    """
+    Datenbankmodell für Zeitstempel/Zeiteinträge.
+    
+    Speichert einzelne Zeitstempel (Ein- und Ausstempelungen) für die
+    Arbeitszeiterfassung.
+    
+    Attributes:
+        id (int): Eindeutige ID (Primary Key)
+        mitarbeiter_id (int): Foreign Key zum Mitarbeiter
+        zeit (time): Uhrzeit des Stempels
+        datum (date): Datum des Stempels
+        validiert (bool): Ob der Eintrag bereits für Gleitzeitberechnung verwendet wurde
+    """
     __tablename__ = "zeiteinträge"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -40,6 +93,25 @@ class Zeiteintrag(Base):
     validiert = Column(Boolean, nullable=False, default=False) 
 
 class Benachrichtigungen(Base):
+    """
+    Datenbankmodell für Benachrichtigungen an Mitarbeiter.
+    
+    Speichert verschiedene Arten von Benachrichtigungen wie fehlende Stempel,
+    ArbZG-Verstöße, etc.
+    
+    Attributes:
+        id (int): Eindeutige ID (Primary Key)
+        mitarbeiter_id (int): Foreign Key zum Mitarbeiter
+        benachrichtigungs_code (int): Code der Benachrichtigungsart (1-5)
+        datum (date): Datum, auf das sich die Benachrichtigung bezieht
+        
+    Benachrichtigungs-Codes:
+        1: Fehlender Arbeitstag (nicht gestempelt)
+        2: Ungerader Stempel (fehlt Ein- oder Ausstempelung)
+        3: Ruhezeit-Verstoß
+        4: Durchschnittliche Arbeitszeit > 8 Stunden
+        5: Maximale Tagesarbeitszeit > 10 Stunden
+    """
     __tablename__ = "benachrichtigungen"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -62,6 +134,12 @@ class Benachrichtigungen(Base):
     )
 
     def create_fehlermeldung(self):
+        """
+        Erstellt eine lesbare Fehlermeldung basierend auf dem Benachrichtigungscode.
+        
+        Returns:
+            str: Formatierte Fehlermeldung für die Benutzeranzeige
+        """
 
         if self.benachrichtigungs_code == 1:
             return f"{self.CODES[1.1]} {self.datum} {self.CODES[1.2]}"
@@ -77,12 +155,43 @@ class Benachrichtigungen(Base):
 
 
 class CalculateTime():
+    """
+    Hilfsklasse zur Berechnung der Arbeitszeit zwischen zwei Zeiteinträgen.
+    
+    Berechnet die Differenz zwischen Start- und Endzeit eines Arbeitstages
+    und berücksichtigt gesetzliche Pausen.
+    
+    Attributes:
+        datum (date): Datum der Zeiteinträge
+        startzeit (time): Startzeit (Einstempelung)
+        endzeit (time): Endzeit (Ausstempelung)
+        gearbeitete_zeit (timedelta): Berechnete Arbeitszeit
+    """
      def __new__(cls, eintrag1, eintrag2):
+         """
+         Factory-Methode zur Validierung der Zeiteinträge.
+         
+         Gibt nur eine Instanz zurück, wenn beide Einträge vom selben Datum sind.
+         
+         Args:
+             eintrag1: Erster Zeiteintrag (Einstempelung)
+             eintrag2: Zweiter Zeiteintrag (Ausstempelung)
+             
+         Returns:
+             CalculateTime: Neue Instanz oder None bei unterschiedlichen Daten
+         """
          if eintrag1.datum != eintrag2.datum:
              return None
          return super().__new__(cls)
 
      def __init__(self, eintrag1, eintrag2):
+         """
+         Initialisiert die Zeitberechnung zwischen zwei Einträgen.
+         
+         Args:
+             eintrag1: Erster Zeiteintrag (Einstempelung)
+             eintrag2: Zweiter Zeiteintrag (Ausstempelung)
+         """
          self.datum = eintrag1.datum
          self.startzeit = eintrag1.zeit
          self.endzeit = eintrag2.zeit
@@ -92,6 +201,13 @@ class CalculateTime():
          self.gearbeitete_zeit = end_dt - start_dt  
 
      def gesetzliche_pausen_hinzufügen(self):
+         """
+         Zieht gesetzlich vorgeschriebene Pausen von der Arbeitszeit ab.
+         
+         Gemäß ArbZG:
+         - > 6 Stunden: 30 Minuten Pause
+         - > 9 Stunden: 45 Minuten Pause (zusätzlich)
+         """
          if self.gearbeitete_zeit > timedelta(hours=6):
              self.gearbeitete_zeit -= timedelta(minutes=30)
 
@@ -101,6 +217,26 @@ class CalculateTime():
 
 
 class ModellTrackTime():
+    """
+    Model-Klasse für Zeiterfassung und Arbeitszeitverwaltung.
+    
+    Verwaltet alle Funktionen rund um Zeiterfassung, Gleitzeitberechnung,
+    ArbZG-Prüfungen und Benachrichtigungen.
+    
+    Attributes:
+        aktueller_nutzer_id (int): ID des angemeldeten Benutzers
+        aktueller_nutzer_name (str): Name des angemeldeten Benutzers
+        aktueller_nutzer_vertragliche_wochenstunden (int): Vertragliche Wochenstunden
+        aktueller_nutzer_gleitzeit (float): Aktueller Gleitzeitstand
+        aktueller_nutzer_ampel_rot/grün (int): Ampel-Grenzwerte
+        manueller_stempel_datum/uhrzeit (str): Daten für manuellen Stempel
+        zeiteinträge_bestimmtes_datum (list): Zeiteinträge für ausgewähltes Datum
+        bestimmtes_datum (str): Ausgewähltes Datum im Kalender
+        neues_passwort/wiederholung (str): Neue Passwort-Daten
+        ampel_status (str): Aktueller Ampelstatus ('red', 'yellow', 'green')
+        benachrichtigungen (list): Liste von Benachrichtigungen
+        feedback_* (str): Feedback-Texte für verschiedene Aktionen
+    """
     def __init__(self):
         self.aktueller_nutzer_id = None
         self.aktueller_nutzer_name = None
@@ -133,6 +269,12 @@ class ModellTrackTime():
         self.feedback_neues_passwort = ""
 
     def get_zeiteinträge(self):
+        """
+        Lädt Zeiteinträge für ein bestimmtes Datum aus der Datenbank.
+        
+        Ruft alle Zeitstempel des angemeldeten Benutzers für das in
+        self.bestimmtes_datum gespeicherte Datum ab.
+        """
         if self.aktueller_nutzer_id is None or self.bestimmtes_datum is None:
             return
         
@@ -151,6 +293,12 @@ class ModellTrackTime():
 
 
     def get_user_info(self):
+        """
+        Lädt die Benutzerinformationen aus der Datenbank.
+        
+        Aktualisiert alle Attribute des angemeldeten Benutzers
+        (Name, Wochenstunden, Gleitzeit, Ampel-Grenzwerte).
+        """
 
         if self.aktueller_nutzer_id is None:
             return
@@ -165,6 +313,13 @@ class ModellTrackTime():
             self.aktueller_nutzer_ampel_grün = nutzer.ampel_grün
 
     def set_ampel_farbe(self):
+        """
+        Setzt den Ampelstatus basierend auf der aktuellen Gleitzeit.
+        
+        Grün: Gleitzeit >= Grenzwert grün
+        Gelb: Grenzwert rot < Gleitzeit < Grenzwert grün
+        Rot: Gleitzeit <= Grenzwert rot
+        """
         if self.aktueller_nutzer_gleitzeit >= self.aktueller_nutzer_ampel_grün:
             self.ampel_status = "green"
 
@@ -176,6 +331,9 @@ class ModellTrackTime():
 
 
     def get_messages(self):
+        """
+        Lädt alle Benachrichtigungen des Benutzers aus der Datenbank.
+        """
 
         stmt = select(Benachrichtigungen).where(Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id)
 
@@ -183,6 +341,12 @@ class ModellTrackTime():
         self.benachrichtigungen = result
 
     def update_passwort(self):
+        """
+        Aktualisiert das Passwort des angemeldeten Benutzers.
+        
+        Validiert die Eingaben (beide Felder ausgefüllt, identisch) und
+        speichert das neue Passwort in der Datenbank.
+        """
         if not self.neues_passwort:
             self.feedback_neues_passwort = "Bitte gebe ein passwort ein"
             return
@@ -203,6 +367,12 @@ class ModellTrackTime():
 
 
     def stempel_hinzufügen(self):
+        """
+        Fügt einen neuen Zeitstempel mit aktueller Uhrzeit hinzu.
+        
+        Erstellt einen neuen Zeiteintrag mit der aktuellen Uhrzeit und
+        dem heutigen Datum.
+        """
 
 
         stempel = Zeiteintrag(
@@ -214,6 +384,12 @@ class ModellTrackTime():
         session.commit()
 
     def manueller_stempel_hinzufügen(self):
+        """
+        Fügt einen manuellen Zeitstempel mit gewähltem Datum/Uhrzeit hinzu.
+        
+        Erstellt einen Zeiteintrag mit vom Benutzer angegebenen Datum
+        und Uhrzeit (z.B. zum Nachtragen vergessener Stempel).
+        """
         stempel = Zeiteintrag(
             mitarbeiter_id = self.aktueller_nutzer_id,
             zeit =datetime.strptime(self.manueller_stempel_uhrzeit, "%H:%M").time(),
@@ -226,6 +402,11 @@ class ModellTrackTime():
 
 
     def urlaub_eintragen(self):
+        """
+        Trägt eine Abwesenheit (Urlaub/Krankheit) ein.
+        
+        Erstellt einen neuen Abwesenheitseintrag in der Datenbank.
+        """
         if (self.neuer_abwesenheitseintrag_datum is None) or (self.neuer_abwesenheitseintrag_art is None):
             return
         elif (self.neuer_abwesenheitseintrag_art == "Urlaub") or (self.neuer_abwesenheitseintrag_art == "Krankheit"):
@@ -244,6 +425,16 @@ class ModellTrackTime():
 
 
     def checke_arbeitstage(self):
+        """
+        Prüft, ob an Arbeitstagen (Mo–Fr) seit letztem Login Stempel fehlen.
+        
+        Für jeden fehlenden Arbeitstag wird die tägliche Arbeitszeit von der 
+        Gleitzeit abgezogen und eine Benachrichtigung erstellt. Urlaubstage
+        werden berücksichtigt. Doppelte Benachrichtigungen/Abzüge werden verhindert.
+        
+        Returns:
+            list: Liste der fehlenden Arbeitstage
+        """
         """Prüft, ob an Arbeitstagen (Mo–Fr) seit letztem Login Stempel fehlen.
         Für jeden fehlenden Tag wird die tägliche Arbeitszeit von der Gleitzeit abgezogen.
         Doppelte Benachrichtigungen oder Abzüge werden verhindert.
@@ -311,6 +502,16 @@ class ModellTrackTime():
         return fehlende_tage   
     
     def checke_stempel(self):
+        """
+        Prüft, ob an Arbeitstagen eine ungerade Anzahl von Stempeln vorliegt.
+        
+        Eine ungerade Anzahl bedeutet, dass entweder die Einstempelung oder
+        Ausstempelung fehlt. Für jeden betroffenen Tag wird eine Benachrichtigung
+        (Code 2) erstellt.
+        
+        Returns:
+            list: Liste der Tage mit ungerader Stempelanzahl
+        """
         if self.aktueller_nutzer_id is None:
             return
 
@@ -351,6 +552,13 @@ class ModellTrackTime():
         return ungerade_tage
     
     def checke_ruhezeiten(self):
+        """
+        Prüft, ob zwischen zwei Arbeitstagen die gesetzliche Ruhezeit von 11 Stunden eingehalten wurde.
+        
+        Berücksichtigt nur Tage bis gestern (heutiger Tag wird ignoriert) und
+        nur Werktage (Mo-Fr). Bei Verstößen wird eine Benachrichtigung (Code 3)
+        erstellt. Doppelte Benachrichtigungen werden vermieden.
+        """
         """
         Prüft, ob zwischen zwei Arbeitstagen die gesetzliche Ruhezeit von 11 Stunden eingehalten wurde.
         Berücksichtigt nur Tage bis gestern (heutiger Tag wird ignoriert).
@@ -427,7 +635,9 @@ class ModellTrackTime():
     def checke_durchschnittliche_arbeitszeit(self):
         """
         Prüft die durchschnittliche Arbeitszeit der letzten 6 Monate (24 Wochen).
-        Erstellt eine Benachrichtigung (Code 4), wenn der Durchschnitt 8 Stunden überschreitet.
+        
+        Erstellt eine Benachrichtigung (Code 4), wenn der Durchschnitt der
+        täglichen Arbeitszeit 8 Stunden überschreitet (gemäß ArbZG).
         """
         if self.aktueller_nutzer_id is None:
             return
@@ -494,6 +704,13 @@ class ModellTrackTime():
                 session.commit()
 
     def checke_max_arbeitszeit(self):
+        """
+        Prüft, ob die maximale Arbeitszeit von 10 Stunden pro Tag überschritten wurde.
+        
+        Überprüft alle noch nicht validierten Zeiteinträge bis gestern.
+        Bei Überschreitung wird eine Benachrichtigung (Code 5) erstellt.
+        Dies entspricht den Anforderungen des ArbZG § 3.
+        """
         stmt = select(Zeiteintrag).where(
             (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
             (Zeiteintrag.validiert == 0) &
@@ -551,6 +768,14 @@ class ModellTrackTime():
 
 
     def berechne_gleitzeit(self):
+        """
+        Berechnet die Gleitzeit basierend auf noch nicht validierten Zeiteinträgen.
+        
+        Verarbeitet paarweise Zeitstempel (Ein-/Ausstempelung), berechnet die
+        Arbeitszeit unter Berücksichtigung gesetzlicher Pausen, zieht die
+        Sollarbeitszeit ab und aktualisiert das Gleitzeitkonto.
+        Bereits validierte Einträge werden als solche markiert.
+        """
         stmt = select(Zeiteintrag).where(
             (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
             (Zeiteintrag.validiert == 0) &
@@ -620,6 +845,20 @@ class ModellTrackTime():
             session.commit()
 
     def berechne_durchschnittliche_gleitzeit(self, start_datum: date, end_datum: date, include_missing_days: bool = False):
+        """
+        Berechnet die durchschnittliche tägliche Gleitzeit im angegebenen Zeitraum.
+        
+        Args:
+            start_datum (date): Startdatum der Auswertung (inklusive)
+            end_datum (date): Enddatum der Auswertung (inklusive)
+            include_missing_days (bool): 
+                Wenn True -> Tage ohne Stempel werden als 0 Stunden Arbeit (negativ) gewertet.
+                Wenn False -> Nur Tage mit Stempel werden berücksichtigt.
+        
+        Returns:
+            dict: Enthält 'durchschnitt_gleitzeit_stunden', 'anzahl_tage', 'berücksichtigte_tage'
+                  oder 'error' bei ungültigen Parametern
+        """
         """
         Berechnet die durchschnittliche tägliche Gleitzeit im angegebenen Zeitraum.
         
@@ -719,8 +958,21 @@ class ModellTrackTime():
 
 
 class ModellLogin():
+    """
+    Model-Klasse für Login und Benutzerregistrierung.
+    
+    Verwaltet die Authentifizierung und Erstellung neuer Benutzer.
+    
+    Attributes:
+        neuer_nutzer_* (str): Daten für die Registrierung eines neuen Benutzers
+        neuer_nutzer_rückmeldung (str): Feedback-Text für Registrierung
+        anmeldung_name/passwort (str): Login-Daten
+        anmeldung_rückmeldung (str): Feedback-Text für Login
+        anmeldung_mitarbeiter_id_validiert (int): ID des erfolgreich angemeldeten Benutzers
+    """
 
     def __init__(self):
+        """Initialisiert alle Attribute des Login-Models."""
        self.neuer_nutzer_name = None
        self.neuer_nutzer_passwort = None
        self.neuer_nutzer_passwort_val = None
@@ -735,6 +987,12 @@ class ModellLogin():
        
 
     def neuen_nutzer_anlegen(self):
+         """
+         Erstellt einen neuen Benutzer in der Datenbank.
+         
+         Validiert alle Eingaben (vollständig, korrekt formatiert, Passwörter identisch)
+         und erstellt bei Erfolg einen neuen Mitarbeiter-Eintrag.
+         """
          # Prüfe auf None für jedes Attribut
         if not self.neuer_nutzer_name:
             self.neuer_nutzer_rückmeldung = "Bitte gib einen Namen ein"
@@ -781,6 +1039,15 @@ class ModellLogin():
 
 
     def login(self):
+        """
+        Authentifiziert einen Benutzer.
+        
+        Überprüft Benutzername und Passwort gegen die Datenbank.
+        Bei Erfolg wird die Mitarbeiter-ID gespeichert.
+        
+        Returns:
+            bool: True bei erfolgreichem Login, None bei Fehler
+        """
         stmt = select(mitarbeiter).where(mitarbeiter.name == self.anmeldung_name)
         nutzer = session.execute(stmt).scalar_one_or_none()
 
