@@ -215,6 +215,7 @@ class RegisterView(Screen):
         self.reg_username_input.focus_next = self.reg_password_input
         self.reg_password_input.focus_next = self.reg_password_input_rep
         self.reg_password_input_rep.focus_next = self.reg_geburtsdatum
+        self.reg_geburtsdatum.focus_next = self.reg_limit_green
         self.reg_limit_green.focus_next = self.reg_limit_red
         self.reg_limit_red.focus_next = self.reg_superior
         self.reg_superior.focus_next = self.reg_username_input
