@@ -425,6 +425,16 @@ class ModellTrackTime():
 
 
     def checke_arbeitstage(self):
+        """
+        Prüft, ob an Arbeitstagen (Mo–Fr) seit letztem Login Stempel fehlen.
+        
+        Für jeden fehlenden Arbeitstag wird die tägliche Arbeitszeit von der 
+        Gleitzeit abgezogen und eine Benachrichtigung erstellt. Urlaubstage
+        werden berücksichtigt. Doppelte Benachrichtigungen/Abzüge werden verhindert.
+        
+        Returns:
+            list: Liste der fehlenden Arbeitstage
+        """
         """Prüft, ob an Arbeitstagen (Mo–Fr) seit letztem Login Stempel fehlen.
         Für jeden fehlenden Tag wird die tägliche Arbeitszeit von der Gleitzeit abgezogen.
         Doppelte Benachrichtigungen oder Abzüge werden verhindert.
@@ -492,6 +502,16 @@ class ModellTrackTime():
         return fehlende_tage   
     
     def checke_stempel(self):
+        """
+        Prüft, ob an Arbeitstagen eine ungerade Anzahl von Stempeln vorliegt.
+        
+        Eine ungerade Anzahl bedeutet, dass entweder die Einstempelung oder
+        Ausstempelung fehlt. Für jeden betroffenen Tag wird eine Benachrichtigung
+        (Code 2) erstellt.
+        
+        Returns:
+            list: Liste der Tage mit ungerader Stempelanzahl
+        """
         if self.aktueller_nutzer_id is None:
             return
 
@@ -532,6 +552,13 @@ class ModellTrackTime():
         return ungerade_tage
     
     def checke_ruhezeiten(self):
+        """
+        Prüft, ob zwischen zwei Arbeitstagen die gesetzliche Ruhezeit von 11 Stunden eingehalten wurde.
+        
+        Berücksichtigt nur Tage bis gestern (heutiger Tag wird ignoriert) und
+        nur Werktage (Mo-Fr). Bei Verstößen wird eine Benachrichtigung (Code 3)
+        erstellt. Doppelte Benachrichtigungen werden vermieden.
+        """
         """
         Prüft, ob zwischen zwei Arbeitstagen die gesetzliche Ruhezeit von 11 Stunden eingehalten wurde.
         Berücksichtigt nur Tage bis gestern (heutiger Tag wird ignoriert).
@@ -608,6 +635,12 @@ class ModellTrackTime():
     def checke_durchschnittliche_arbeitszeit(self):
         """
         Prüft die durchschnittliche Arbeitszeit der letzten 6 Monate (24 Wochen).
+        
+        Erstellt eine Benachrichtigung (Code 4), wenn der Durchschnitt der
+        täglichen Arbeitszeit 8 Stunden überschreitet (gemäß ArbZG).
+        """
+        """
+        Prüft die durchschnittliche Arbeitszeit der letzten 6 Monate (24 Wochen).
         Erstellt eine Benachrichtigung (Code 4), wenn der Durchschnitt 8 Stunden überschreitet.
         """
         if self.aktueller_nutzer_id is None:
@@ -675,6 +708,13 @@ class ModellTrackTime():
                 session.commit()
 
     def checke_max_arbeitszeit(self):
+        """
+        Prüft, ob die maximale Arbeitszeit von 10 Stunden pro Tag überschritten wurde.
+        
+        Überprüft alle noch nicht validierten Zeiteinträge bis gestern.
+        Bei Überschreitung wird eine Benachrichtigung (Code 5) erstellt.
+        Dies entspricht den Anforderungen des ArbZG § 3.
+        """
         stmt = select(Zeiteintrag).where(
             (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
             (Zeiteintrag.validiert == 0) &
@@ -732,6 +772,14 @@ class ModellTrackTime():
 
 
     def berechne_gleitzeit(self):
+        """
+        Berechnet die Gleitzeit basierend auf noch nicht validierten Zeiteinträgen.
+        
+        Verarbeitet paarweise Zeitstempel (Ein-/Ausstempelung), berechnet die
+        Arbeitszeit unter Berücksichtigung gesetzlicher Pausen, zieht die
+        Sollarbeitszeit ab und aktualisiert das Gleitzeitkonto.
+        Bereits validierte Einträge werden als solche markiert.
+        """
         stmt = select(Zeiteintrag).where(
             (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
             (Zeiteintrag.validiert == 0) &
@@ -801,6 +849,20 @@ class ModellTrackTime():
             session.commit()
 
     def berechne_durchschnittliche_gleitzeit(self, start_datum: date, end_datum: date, include_missing_days: bool = False):
+        """
+        Berechnet die durchschnittliche tägliche Gleitzeit im angegebenen Zeitraum.
+        
+        Args:
+            start_datum (date): Startdatum der Auswertung (inklusive)
+            end_datum (date): Enddatum der Auswertung (inklusive)
+            include_missing_days (bool): 
+                Wenn True -> Tage ohne Stempel werden als 0 Stunden Arbeit (negativ) gewertet.
+                Wenn False -> Nur Tage mit Stempel werden berücksichtigt.
+        
+        Returns:
+            dict: Enthält 'durchschnitt_gleitzeit_stunden', 'anzahl_tage', 'berücksichtigte_tage'
+                  oder 'error' bei ungültigen Parametern
+        """
         """
         Berechnet die durchschnittliche tägliche Gleitzeit im angegebenen Zeitraum.
         
@@ -900,8 +962,21 @@ class ModellTrackTime():
 
 
 class ModellLogin():
+    """
+    Model-Klasse für Login und Benutzerregistrierung.
+    
+    Verwaltet die Authentifizierung und Erstellung neuer Benutzer.
+    
+    Attributes:
+        neuer_nutzer_* (str): Daten für die Registrierung eines neuen Benutzers
+        neuer_nutzer_rückmeldung (str): Feedback-Text für Registrierung
+        anmeldung_name/passwort (str): Login-Daten
+        anmeldung_rückmeldung (str): Feedback-Text für Login
+        anmeldung_mitarbeiter_id_validiert (int): ID des erfolgreich angemeldeten Benutzers
+    """
 
     def __init__(self):
+       """Initialisiert alle Attribute des Login-Models."""
        self.neuer_nutzer_name = None
        self.neuer_nutzer_passwort = None
        self.neuer_nutzer_passwort_val = None
@@ -916,6 +991,12 @@ class ModellLogin():
        
 
     def neuen_nutzer_anlegen(self):
+         """
+         Erstellt einen neuen Benutzer in der Datenbank.
+         
+         Validiert alle Eingaben (vollständig, korrekt formatiert, Passwörter identisch)
+         und erstellt bei Erfolg einen neuen Mitarbeiter-Eintrag.
+         """
          # Prüfe auf None für jedes Attribut
         if not self.neuer_nutzer_name:
             self.neuer_nutzer_rückmeldung = "Bitte gib einen Namen ein"
@@ -962,6 +1043,15 @@ class ModellLogin():
 
 
     def login(self):
+        """
+        Authentifiziert einen Benutzer.
+        
+        Überprüft Benutzername und Passwort gegen die Datenbank.
+        Bei Erfolg wird die Mitarbeiter-ID gespeichert.
+        
+        Returns:
+            bool: True bei erfolgreichem Login, None bei Fehler
+        """
         stmt = select(mitarbeiter).where(mitarbeiter.name == self.anmeldung_name)
         nutzer = session.execute(stmt).scalar_one_or_none()
 
