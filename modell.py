@@ -972,7 +972,7 @@ class ModellLogin():
     """
 
     def __init__(self):
-       """Initialisiert alle Attribute des Login-Models."""
+        """Initialisiert alle Attribute des Login-Models."""
        self.neuer_nutzer_name = None
        self.neuer_nutzer_passwort = None
        self.neuer_nutzer_passwort_val = None
