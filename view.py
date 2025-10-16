@@ -125,11 +125,15 @@ class RegisterView(Screen):
         )
         self.reg_limit_green = TabTextInput(
             multiline=False,
+            input_filter='int',
+            hint_text="Grenzwert (Zahl)",
             size_hint_y=None,
             height=40
         )
         self.reg_limit_red = TabTextInput(
             multiline=False,
+            input_filter='int',
+            hint_text="Grenzwert (Zahl)",
             size_hint_y=None,
             height=40
         )
