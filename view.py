@@ -277,6 +277,12 @@ class RegisterView(Screen):
         self.add_widget(self.layout)
 
     def on_enter(self):
+        """
+        Wird aufgerufen, wenn der Registrierungs-Screen betreten wird.
+        
+        Setzt den Fokus und konfiguriert die Tab-Navigation zwischen
+        den Eingabefeldern.
+        """
         self.reg_username_input.focus = True
         self.reg_username_input.focus_next = self.reg_password_input
         self.reg_password_input.focus_next = self.reg_password_input_rep
@@ -288,10 +294,36 @@ class RegisterView(Screen):
 
 
 class MainView(Screen):
-    '''Hauptfenster der Anwendung'''
+    """
+    Hauptansicht der Anwendung mit Tabs.
+    
+    Enthält mehrere Tabs für verschiedene Funktionen:
+    - Zeiterfassung: Stempeln, Gleitzeit-Anzeige, Ampel
+    - Zeit nachtragen: Manuelles Hinzufügen von Zeitstempeln
+    - Kalenderansicht: Monatlicher Überblick über Zeiteinträge
+    - Benachrichtigungen: Warnungen und Hinweise
+    - Einstellungen: Passwortänderung und Einstellungen
+    
+    Attributes:
+        layout (TabbedPanel): Hauptlayout mit Tabs
+        date_picker (MDDatePicker): Datum-Picker
+        time_picker (MDTimePicker): Zeit-Picker
+        time_tracking_tab_height/width (int): Fensterdimensionen
+        stempel_button (Button): Button zum Stempeln
+        nachtragen_button (Button): Button zum manuellen Nachtragen
+        ampel (TrafficLight): Ampel-Widget zur Gleitzeit-Visualisierung
+        month_calendar (MonthCalendar): Kalender-Widget
+    """
 
     def __init__(self, **kwargs):
-        '''Initialisiert die Main-View'''
+        """
+        Initialisiert die Main-View.
+        
+        Erstellt alle Tabs und ihre Inhalte.
+        
+        Args:
+            **kwargs: Keyword-Argumente für Screen
+        """
         super().__init__(**kwargs)
         self.layout = TabbedPanel(do_default_tab=False, tab_width=170)
         self.date_picker = MDDatePicker()
@@ -306,7 +338,11 @@ class MainView(Screen):
         self.time_tracking_tab_width = 800
 
     def create_time_tracking_tab(self):
-        '''Erstellt die View für die Zeiterfassung'''
+        """
+        Erstellt den Tab für die Zeiterfassung.
+        
+        Enthält Stempel-Button, Gleitzeit-Anzeige und Ampel-Widget.
+        """
 
         self.time_tracking_tab = TabbedPanelItem(text="Zeiterfassung")
 
@@ -414,7 +450,11 @@ class MainView(Screen):
         self.layout.add_widget(self.time_tracking_tab)
 
     def create_zeitnachtrag_tab(self):
-        '''Erstellt die View für das manuelle Nachtragen von Zeitstempeln'''
+        """
+        Erstellt den Tab für das manuelle Nachtragen von Zeitstempeln.
+        
+        Ermöglicht das Hinzufügen von Zeitstempeln mit gewähltem Datum und Uhrzeit.
+        """
         
         self.zeitnachtrag_tab = TabbedPanelItem(text="Zeit nachtragen")
         self.zeitnachtrag_layout = BoxLayout(orientation='vertical', padding=20, spacing=15, 
@@ -466,7 +506,11 @@ class MainView(Screen):
         self.layout.add_widget(self.zeitnachtrag_tab)
 
     def create_calendar_tab(self):
-        '''Erstellt die View für die Kalender-Ansicht'''
+        """
+        Erstellt den Tab für die Kalenderansicht.
+        
+        Zeigt einen Monatskalender mit den Zeiteinträgen des Benutzers.
+        """
 
         self.calendar_tab = TabbedPanelItem(text="Kalenderansicht")
         self.calendar_layout = BoxLayout(orientation="vertical")
@@ -476,7 +520,12 @@ class MainView(Screen):
         self.layout.add_widget(self.calendar_tab)
 
     def create_benachrichtigungen_tab(self):
-        """Erstellt den Tab für Benachrichtigungen"""
+        """
+        Erstellt den Tab für Benachrichtigungen.
+        
+        Zeigt Warnungen und Hinweise zu fehlenden Stempeln,
+        ArbZG-Verstößen, etc.
+        """
 
         self.benachrichtigungen_tab = TabbedPanelItem(text="Benachrichtigungen")
 
@@ -505,7 +554,13 @@ class MainView(Screen):
 
 
     def add_benachrichtigung(self, text, datum):
-        """Fügt eine einzelne Benachrichtigung zum Grid hinzu"""
+        """
+        Fügt eine einzelne Benachrichtigung zum Grid hinzu.
+        
+        Args:
+            text (str): Text der Benachrichtigung
+            datum: Datum der Benachrichtigung
+        """
 
         box = BoxLayout(
             orientation='vertical',
@@ -551,7 +606,12 @@ class MainView(Screen):
         self.benachrichtigungen_grid.add_widget(box)  
 
     def create_settings_tab(self):
-        '''Erstellt die View für die Einstellungen'''
+        """
+        Erstellt den Tab für Einstellungen.
+        
+        Ermöglicht Passwortänderung und Anpassung von Einstellungen
+        wie Wochenstunden und Ampel-Grenzwerte.
+        """
 
         self.settings_tab = TabbedPanelItem(text="Einstellungen")
 
@@ -619,6 +679,11 @@ class MainView(Screen):
         self.layout.add_widget(self.settings_tab)
 
     def on_enter(self):
+        """
+        Wird aufgerufen, wenn der Main-Screen betreten wird.
+        
+        Konfiguriert die Tab-Navigation zwischen den Eingabefeldern.
+        """
         self.day_off_input.focus_next = self.green_limit_input
         self.green_limit_input.focus_next = self.yellow_limit_input
         self.yellow_limit_input.focus_next = self.red_limit_input
@@ -628,10 +693,22 @@ class MainView(Screen):
 
 
 class TrafficLight(BoxLayout):
-    '''Ampelanzeige mit 3 Kreisen'''
+    """
+    Ampel-Widget zur Visualisierung des Gleitzeitstatus.
+    
+    Zeigt eine grafische Ampel mit drei Zuständen:
+    - Grün: Gleitzeit im positiven Bereich
+    - Gelb: Gleitzeit im neutralen Bereich
+    - Rot: Gleitzeit im negativen Bereich
+    
+    Attributes:
+        lights (dict): Dictionary mit Farb- und Ellipsen-Objekten
+    """
 
     def __init__(self):
-        '''Initialisiert die Ampelanzeige'''
+        """
+        Initialisiert die Ampel mit drei Kreisen (rot, gelb, grün).
+        """
 
         super().__init__()
         self.orientation = "vertical"
@@ -660,13 +737,25 @@ class TrafficLight(BoxLayout):
         self.bind(pos=self.update_positions, size=self.update_positions)
 
     def update_positions(self, *args):
-        """Bestimmt die Positionen der Ampel-Kreise"""
+        """
+        Aktualisiert die Positionen der Ampel-Kreise.
+        
+        Wird aufgerufen, wenn sich Position oder Größe des Widgets ändert.
+        
+        Args:
+            *args: Kivy Event-Argumente
+        """
         
         for i, color in enumerate(["green", "yellow", "red"]):
             self.lights[color][1].pos = (self.x, self.y + i * 50)
 
     def set_state(self, state):
-        """Setzt die Ampel auf den angegebenen Zustand"""
+        """
+        Setzt die Ampel auf den angegebenen Zustand.
+        
+        Args:
+            state (str): 'red', 'yellow' oder 'green'
+        """
 
         for color, _ in self.lights.values():
             color.rgb = (0.3, 0.3, 0.3)
@@ -680,7 +769,21 @@ class TrafficLight(BoxLayout):
 
 
 class MonthCalendar(BoxLayout):
-    '''Kalender mit Monatsübersicht und Anzeige der gestempelten Zeiten'''
+    """
+    Kalender-Widget mit Monatsübersicht und Zeiteintrags-Anzeige.
+    
+    Zeigt einen Monatskalender an, in dem der Benutzer Tage auswählen
+    und die Zeiteinträge für den jeweiligen Tag ansehen kann.
+    
+    Attributes:
+        year (int): Aktuell angezeigtes Jahr
+        month (int): Aktuell angezeigter Monat
+        day_selected_callback: Callback-Funktion für Tages-Auswahl
+        prev_btn/next_btn (Button): Navigation zwischen Monaten
+        date_label (Label): Zeigt ausgewähltes Datum
+        times_box (GridLayout): Container für Zeiteinträge
+        edit_btn (MDIconButton): Button zum Bearbeiten von Einträgen
+    """
 
     def __init__(self):
         '''Initialisiert die Monatsansicht des Kalenders'''
