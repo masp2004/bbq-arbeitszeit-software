@@ -1,3 +1,17 @@
+"""
+View-Modul für die BBQ Arbeitszeit-Erfassungssoftware.
+
+Dieses Modul enthält alle GUI-Komponenten der Anwendung, entwickelt mit Kivy/KivyMD.
+Es implementiert die verschiedenen Screens und UI-Elemente:
+
+- LoginView: Anmeldebildschirm
+- RegisterView: Registrierungsbildschirm
+- MainView: Hauptansicht mit Tabs für Zeiterfassung, Kalender, Benachrichtigungen, Einstellungen
+- Hilfsklassen: TrafficLight (Ampel), MonthCalendar (Kalenderansicht), custom UI-Elemente
+
+Die Views folgen dem MVC-Pattern und kommunizieren mit dem Controller.
+"""
+
 import datetime
 import calendar
 
@@ -22,10 +36,31 @@ from kivy.uix.checkbox import CheckBox
 
 
 class LoginView(Screen):
-    '''Anmelde-Fenster'''
+    """
+    Anmelde-Screen der Anwendung.
+    
+    Zeigt Eingabefelder für Benutzername und Passwort sowie
+    Buttons für Login und Wechsel zur Registrierung.
+    
+    Attributes:
+        width_window (int): Breite des Fensters
+        height_window (int): Höhe des Fensters
+        username_input (TabTextInput): Eingabefeld für Benutzername
+        password_input (TabTextInput): Eingabefeld für Passwort
+        anmeldung_rückmeldung_label (Label): Feedback-Label für Login
+        login_button (Button): Login-Button
+        change_view_registrieren_button (Button): Button zum Wechsel zur Registrierung
+    """
 
     def __init__(self, **kwargs):
-        '''Initialisiert die Login-View'''
+        """
+        Initialisiert die Login-View.
+        
+        Erstellt das Layout mit Logo, Eingabefeldern und Buttons.
+        
+        Args:
+            **kwargs: Keyword-Argumente für Screen
+        """
         super().__init__(**kwargs)
         self.width_window = 320
         self.height_window = 270
@@ -64,16 +99,43 @@ class LoginView(Screen):
         self.add_widget(self.layout)
 
     def on_enter(self):
+        """
+        Wird aufgerufen, wenn der Login-Screen betreten wird.
+        
+        Setzt den Fokus auf das Benutzername-Feld und konfiguriert
+        die Tab-Navigation zwischen Eingabefeldern.
+        """
         self.username_input.focus = True
         self.username_input.focus_next = self.password_input
         self.password_input.focus_next = self.username_input
 
 
 class RegisterView(Screen):
-    '''Registrierungs-Fenster'''
+    """
+    Registrierungs-Screen der Anwendung.
+    
+    Zeigt Eingabefelder für alle notwendigen Daten zur Registrierung
+    eines neuen Benutzers (Name, Passwort, Geburtsdatum, Arbeitszeit, etc.).
+    
+    Attributes:
+        width_window (int): Breite des Fensters
+        height_window (int): Höhe des Fensters
+        date_picker (MDDatePicker): Datum-Picker für Geburtsdatum
+        reg_*_input: Verschiedene Eingabefelder für Registrierungsdaten
+        register_button (Button): Registrierungs-Button
+        change_view_login_button (Button): Button zum Wechsel zum Login
+    """
 
     def __init__(self, **kwargs):
-        '''Initialisiert die Register-View'''
+        """
+        Initialisiert die Register-View.
+        
+        Erstellt das Layout mit allen Registrierungs-Eingabefeldern
+        und Buttons.
+        
+        Args:
+            **kwargs: Keyword-Argumente für Screen
+        """
         super().__init__(**kwargs)
 
         self.width_window = 535
