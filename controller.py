@@ -4,6 +4,7 @@ from view import LoginView, RegisterView, MainView
 from kivy.core.window import Window
 from kivymd.uix.pickers import MDDatePicker, MDTimePicker
 from datetime import datetime
+from window_size import set_fixed_window_size
 
 
 class Controller():
@@ -13,7 +14,8 @@ class Controller():
         self.sm = ScreenManager()
         self.register_view = RegisterView(name="register")
         self.login_view = LoginView(name = "login")
-        self.main_view = MainView(name="main")
+        self.main_view = MainView(name="main", controller=self)
+        self.active_time_input = None
         
         # Screens ins ScreenManager packen
         self.sm.add_widget(self.register_view)
@@ -166,15 +168,15 @@ class Controller():
 
     #change views
     def change_view_register(self,b):
-        Window.size = (self.register_view.width_window, self.register_view.height_window)
+        set_fixed_window_size((self.register_view.width_window, self.register_view.height_window))
         self.sm.current = "register" 
     
     def change_view_login(self,b):
-        Window.size = (self.login_view.width_window, self.login_view.height_window)
+        set_fixed_window_size((self.login_view.width_window, self.login_view.height_window))
         self.sm.current = "login"
 
     def change_view_main(self,b):
-        Window.size =(self.main_view.time_tracking_tab_width, self.main_view.time_tracking_tab_height)
+        set_fixed_window_size((self.main_view.time_tracking_tab_width, self.main_view.time_tracking_tab_height))
         self.sm.current = "main"
 
     def show_date_picker(self, instance, focus):
@@ -225,28 +227,17 @@ class Controller():
 
 
     def show_time_picker(self, instance, focus):
+        self.active_time_input = instance
         if focus:
             self.main_view.time_picker.open()
             instance.focus= False
 
     def on_time_selected(self, instance, time):
-        self.main_view.time_input.text = time.strftime("%H:%M")
-    
-
+        if self.active_time_input:
+            self.active_time_input.text = time.strftime("%H:%M")
     
     def day_selected(self, date):
         ''' Wird aufgerufen, wenn ein Tag im Kalender ausgewählt wird '''
-
-        if hasattr(self.main_view.month_calendar, "_edit_callback"):
-            self.main_view.month_calendar.edit_btn.unbind(on_release=self.main_view.month_calendar._edit_callback)
-
-        def _callback(instance):
-            popup = self.main_view.month_calendar.open_edit_popup(date)
-            popup.add_btn.bind(on_release=lambda instance: self.add_entry_in_popup(popup))
-
-        self.main_view.month_calendar._edit_callback = _callback
-        self.main_view.month_calendar.edit_btn.bind(on_release=self.main_view.month_calendar._edit_callback)
-
 
         self.update_model_time_tracking()
         self.model_track_time.get_zeiteinträge()
