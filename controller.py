@@ -3,8 +3,10 @@ from modell import ModellLogin, ModellTrackTime
 from view import LoginView, RegisterView, MainView
 from kivy.core.window import Window
 from kivymd.uix.pickers import MDDatePicker, MDTimePicker
-from datetime import datetime
+from datetime import datetime, date
 from window_size import set_fixed_window_size
+from kivy.clock import Clock
+import time
 
 
 class Controller():
@@ -14,8 +16,12 @@ class Controller():
         self.sm = ScreenManager()
         self.register_view = RegisterView(name="register")
         self.login_view = LoginView(name = "login")
-        self.main_view = MainView(name="main", controller=self)
+        self.main_view = MainView(name="main")
         self.active_time_input = None
+
+        # status für den Timer
+        self.timer_event = None
+        self.start_time_dt = None
         
         # Screens ins ScreenManager packen
         self.sm.add_widget(self.register_view)
@@ -35,8 +41,13 @@ class Controller():
         self.main_view.date_picker.bind(on_save=self.on_date_selected_main)
         self.main_view.time_input.bind(focus=self.show_time_picker)
         self.main_view.time_picker.bind(on_save=self.on_time_selected)
-                # Binden der Checkbox an eine Controller-Methode
+        # Binden der Checkbox an eine Controller-Methode
         self.main_view.checkbox.bind(active=self.on_checkbox_changed)
+
+        #bearbeiten button im Calender
+        # self.main_view.calendar_layout.edit_button.bind(on_press=lambda instance, time=stempelzeit: self.open_edit_popup(self.date_label.text, time))
+
+        self.main_view.eintrag_art_spinner.bind(text=self.on_eintrag_art_selected)
 
                 # Binden des Spinners
         self.main_view.month_calendar.employee_spinner.bind(text=self.on_employee_selected)
@@ -45,7 +56,7 @@ class Controller():
 
 
         self.main_view.stempel_button.bind(on_press=self.stempel_button_clicked)
-        self.main_view.nachtragen_button.bind(on_press=self.stempel_nachtragen_button_clickes)
+        self.main_view.nachtragen_button.bind(on_press=self.nachtragen_button_clicked)
 
         self.main_view.month_calendar.prev_btn.bind(on_release=self.prev_button_clicked)
         self.main_view.month_calendar.next_btn.bind(on_release=self.next_button_clicked)
@@ -77,8 +88,9 @@ class Controller():
     def update_model_time_tracking(self):
         self.model_track_time.aktueller_nutzer_id = self.model_login.anmeldung_mitarbeiter_id_validiert
         self.model_track_time.get_user_info()
-        self.model_track_time.manueller_stempel_datum = self.main_view.date_input.text
+        self.model_track_time.nachtragen_datum = self.main_view.date_input.text
         self.model_track_time.manueller_stempel_uhrzeit = self.main_view.time_input.text
+        self.model_track_time.neuer_abwesenheitseintrag_art = self.main_view.eintrag_art_spinner.text
         self.model_track_time.neues_passwort = self.main_view.new_password_input.text
         self.model_track_time.neues_passwort_wiederholung = self.main_view.repeat_password_input.text
         self.model_track_time.bestimmtes_datum = self.main_view.month_calendar.date_label.text
@@ -102,10 +114,10 @@ class Controller():
         if self.model_track_time.zeiteinträge_bestimmtes_datum is not None:
               
             for stempel in self.model_track_time.zeiteinträge_bestimmtes_datum:
-                zeit = stempel.zeit.strftime("%H:%M")
+                zeit = stempel[0].zeit.strftime("%H:%M")
   
 
-                self.main_view.month_calendar.add_time_row(stempelzeit= zeit)
+                self.main_view.month_calendar.add_time_row(stempelzeit= zeit, is_problematic=stempel[1])
 
     def update_view_benachrichtigungen(self):
         for nachricht in self.model_track_time.benachrichtigungen:
@@ -134,6 +146,7 @@ class Controller():
             self.model_track_time.get_employees()
             self.update_view_time_tracking()
             self.update_view_benachrichtigungen()
+            self.start_or_stop_visual_timer()
             self.model_track_time.aktuelle_kalendereinträge_für_id = self.model_track_time.aktueller_nutzer_id
 
     def registrieren_button_clicked(self,b):
@@ -144,11 +157,15 @@ class Controller():
 
     def stempel_button_clicked(self,b):
         self.model_track_time.stempel_hinzufügen()
+        self.start_or_stop_visual_timer()
         self.update_view_time_tracking()
     
-    def stempel_nachtragen_button_clickes(self,b):
+    def nachtragen_button_clicked(self,b):
         self.update_model_time_tracking()
-        self.model_track_time.manueller_stempel_hinzufügen()
+        if self.main_view.eintrag_art_spinner.text == "Zeitstempel":
+            self.model_track_time.manueller_stempel_hinzufügen()
+        elif self.main_view.eintrag_art_spinner.text == "Urlaub" or self.main_view.eintrag_art_spinner.text == "Krank":
+            self.model_track_time.urlaub_eintragen()
         self.update_view_time_tracking()
 
     def passwort_ändern_button_clicked(self,b):
@@ -187,10 +204,91 @@ class Controller():
                 self.main_view.date_picker.open()
             instance.focus = False
 
+    #timer logik
+
+    def toggle_timer(self, _):
+        """Startet oder stoppt den Timer, wenn auf 'Stempeln' geklickt wird"""
+
+        if not hasattr(self, "timer_running"):
+            self.timer_running = False
+
+        if self.timer_running:
+            # Timer stoppen
+            Clock.unschedule(self.update_timer)
+            self.timer_running = False
+            self.timer_label.text = "00:00:00"
+        else:
+            # Timer starten
+            self.start_time = time.time()
+            self.timer_running = True
+            Clock.schedule_interval(self.update_timer, 1)
+
+    def update_timer(self, _):
+        """Wird jede Sekunde aufgerufen, um die gestempelte Zeit zu aktualisieren"""
+
+        elapsed = int(time.time() - self.start_time)
+        hours, remainder = divmod(elapsed, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        self.timer_label.text = f"{hours:02d}:{minutes:02d}:{seconds:02d}"    
+
+
+    def start_or_stop_visual_timer(self):
+        """
+        Prüft den Stempelstatus im Modell und startet/stoppt den 
+        visuellen Timer in der MainView entsprechend.
+        """
+        # Eventuellen alten Timer stoppen
+        if self.timer_event:
+            self.timer_event.cancel()
+            self.timer_event = None
+
+        # Model fragen, ob der Nutzer gerade eingestempelt ist
+        today_stamps = self.model_track_time.get_stamps_for_today()
+        is_clocked_in = len(today_stamps) % 2 != 0
+
+        if is_clocked_in:
+            # Letzte Stempelzeit holen und Timer starten
+            last_stamp_time = today_stamps[-1].zeit
+            self.start_time_dt = datetime.combine(date.today(), last_stamp_time)
+            self.timer_event = Clock.schedule_interval(self.update_visual_timer, 1)
+            self.update_visual_timer(0) # Sofort aktualisieren
+        else:
+            # Nicht eingestempelt, Timer auf 00:00:00 setzen
+            self.main_view.timer_label.text = "00:00:00"
+
+    # NEUE METHODE
+    def update_visual_timer(self, dt):
+        """
+        Wird jede Sekunde aufgerufen, um die Timer-Anzeige zu aktualisieren.
+        """
+        if not self.start_time_dt:
+            return
+
+        elapsed = datetime.now() - self.start_time_dt
+        total_seconds = int(elapsed.total_seconds())
+
+        # Sicherstellen, dass die Zeit nicht negativ wird (z.B. bei Systemzeitänderungen)
+        if total_seconds < 0:
+            total_seconds = 0
+
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        self.main_view.timer_label.text = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
     
     def on_date_selected_register(self, instance, value, date_range):
         """ value ist ein datetime.date Objekt """
         self.register_view.reg_geburtsdatum.text = value.strftime("%d/%m/%Y")
+
+    def on_eintrag_art_selected(self, spinner_instance, text):
+        """Blendet Zeitauswahl ein/aus je nach Art des Eintrags"""
+        if text in ["Urlaub", "Krank"]:
+            self.main_view.time_input.opacity = 0
+            self.main_view.time_label.opacity = 0
+        else:
+            self.main_view.time_input.opacity = 1
+            self.main_view.time_label.opacity = 1
+
+    
 
 
     def on_date_selected_main(self, instance, value, date_range):

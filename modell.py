@@ -177,8 +177,9 @@ class ModellTrackTime():
         self.aktueller_nutzer_ampel_rot = None
         self.aktueller_nutzer_ampel_grün = None
 
-        self.manueller_stempel_datum = None
+        self.nachtragen_datum = None
         self.manueller_stempel_uhrzeit = None
+        self.neuer_abwesenheitseintrag_art = None
 
         self.zeiteinträge_bestimmtes_datum = None
         self.bestimmtes_datum = None
@@ -199,8 +200,8 @@ class ModellTrackTime():
 
         self.ampel_status = None
 
-        self.neuer_abwesenheitseintrag_datum = None
-        self.neuer_abwesenheitseintrag_art = None
+    
+     
 
 
         self.benachrichtigungen = []
@@ -214,6 +215,8 @@ class ModellTrackTime():
     def get_employees(self):
         stmt = select(mitarbeiter.name).where(mitarbeiter.vorgesetzter_id == self.aktueller_nutzer_id)
         names = session.scalars(stmt).all()
+
+        names.append(self.aktueller_nutzer_name)
         self.mitarbeiter = names
 
     def get_id(self):
@@ -228,7 +231,7 @@ class ModellTrackTime():
     def get_zeiteinträge(self):
         if self.aktueller_nutzer_id is None or self.bestimmtes_datum is None:
             return
-        
+        nutzer = session.get(mitarbeiter, self.aktueller_nutzer_id)
         date = datetime.strptime(self.bestimmtes_datum, "%d.%m.%Y").date()
 
 
@@ -240,7 +243,26 @@ class ModellTrackTime():
                     Zeiteintrag.datum, Zeiteintrag.zeit
                     )
         einträge = session.scalars(stmt).all()
-        self.zeiteinträge_bestimmtes_datum = einträge
+        einträge = session.scalars(stmt).all()
+        
+        einträge_mit_validierung = []
+        for eintrag in einträge:
+            is_unvalid = False
+            stempelzeit = eintrag.zeit
+            
+            # Prüfen ob Nutzer an diesem Tag minderjährig war
+            if nutzer.is_minor_on_date(date):
+                # Für Minderjährige: zwischen 6 und 20 Uhr
+                if stempelzeit < time(6, 0) or stempelzeit > time(20, 0):
+                    is_unvalid = True
+            else:
+                # Für Erwachsene: zwischen 6 und 22 Uhr
+                if stempelzeit < time(6, 0) or stempelzeit > time(22, 0):
+                    is_unvalid = False
+            
+            einträge_mit_validierung.append([eintrag, is_unvalid])
+
+            self.zeiteinträge_bestimmtes_datum = einträge_mit_validierung
 
 
     def get_user_info(self):
@@ -305,26 +327,43 @@ class ModellTrackTime():
         )
         session.add(stempel)
         session.commit()
+    
+    def get_stamps_for_today(self):
+        """
+        Holt alle Zeiteinträge für den aktuellen Nutzer am heutigen Tag.
+        """
+        if not self.aktueller_nutzer_id:
+            return []
+
+        heute = date.today()
+        stmt = select(Zeiteintrag).where(
+            (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+            (Zeiteintrag.datum == heute)
+        ).order_by(Zeiteintrag.zeit)
+
+        einträge = session.scalars(stmt).all()
+        return einträge
+
 
     def manueller_stempel_hinzufügen(self):
         stempel = Zeiteintrag(
             mitarbeiter_id = self.aktueller_nutzer_id,
             zeit =datetime.strptime(self.manueller_stempel_uhrzeit, "%H:%M").time(),
-            datum = datetime.strptime(self.manueller_stempel_datum, "%d/%m/%Y").date()
+            datum = datetime.strptime(self.nachtragen_datum, "%d/%m/%Y").date()
         )
         session.add(stempel)
         session.commit()
 
-        self.feedback_manueller_stempel = f"Stempel am {self.manueller_stempel_datum} um {self.manueller_stempel_uhrzeit} erfolgreich hinzugefügt"
+        self.feedback_manueller_stempel = f"Stempel am {self.nachtragen_datum} um {self.manueller_stempel_uhrzeit} erfolgreich hinzugefügt"
 
 
     def urlaub_eintragen(self):
-        if (self.neuer_abwesenheitseintrag_datum is None) or (self.neuer_abwesenheitseintrag_art is None):
+        if (self.nachtragen_datum is None) or (self.neuer_abwesenheitseintrag_art is None):
             return
         elif (self.neuer_abwesenheitseintrag_art == "Urlaub") or (self.neuer_abwesenheitseintrag_art == "Krankheit"):
             neue_abwesenheit = Abwesenheit(
                 mitarbeiter_id = self.aktueller_nutzer_id,
-                datum = self.neuer_abwesenheitseintrag_datum,
+                datum = datetime.strptime(self.nachtragen_datum, "%d/%m/%Y").date(),
                 typ = self.neuer_abwesenheitseintrag_art
 
             )
