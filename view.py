@@ -321,7 +321,7 @@ class MainView(Screen):
         month_calendar (MonthCalendar): Kalender-Widget
     """
 
-    def __init__(self, controller, **kwargs):
+    def __init__(self,  **kwargs):
         """
         Initialisiert die Main-View.
         
@@ -331,7 +331,6 @@ class MainView(Screen):
             **kwargs: Keyword-Argumente für Screen
         """
         super().__init__(**kwargs)
-        self.controller = controller
         self.layout = TabbedPanel(do_default_tab=False, tab_width=170)
         self.date_picker = MDDatePicker()
         self.time_picker = MDTimePicker()
@@ -364,7 +363,7 @@ class MainView(Screen):
         self.reihe_1 = BoxLayout(orientation='horizontal', spacing=15, size_hint_y=None, height=40)
 
         self.stempel_button = Button(text="Stempeln", size_hint=(None, None), size=(130, 40))
-        self.stempel_button.bind(on_release=self.toggle_timer)
+
 
         # Timer
         self.timer_label = MDLabel(
@@ -481,36 +480,14 @@ class MainView(Screen):
         self.time_tracking_tab.add_widget(main_layout)
         self.layout.add_widget(self.time_tracking_tab)
 
-    def toggle_timer(self, _):
-        """Startet oder stoppt den Timer, wenn auf 'Stempeln' geklickt wird"""
 
-        if not hasattr(self, "timer_running"):
-            self.timer_running = False
-
-        if self.timer_running:
-            # Timer stoppen
-            Clock.unschedule(self.update_timer)
-            self.timer_running = False
-            self.timer_label.text = "00:00:00"
-        else:
-            # Timer starten
-            self.start_time = time.time()
-            self.timer_running = True
-            Clock.schedule_interval(self.update_timer, 1)
-
-    def update_timer(self, _):
-        """Wird jede Sekunde aufgerufen, um die gestempelte Zeit zu aktualisieren"""
-
-        elapsed = int(time.time() - self.start_time)
-        hours, remainder = divmod(elapsed, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        self.timer_label.text = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
     def create_zeitnachtrag_tab(self):
         """
         Erstellt den Tab für das manuelle Nachtragen von Zeitstempeln.
         
-        Ermöglicht das Hinzufügen von Zeitstempeln mit gewähltem Datum und Uhrzeit.
+        Ermöglicht das Hinzufügen von Zeitstempeln mit gewähltem Datum und Uhrzeit
+        sowie das Eintragen von Urlaub und Krankheit.
         """
         
         self.zeitnachtrag_tab = TabbedPanelItem(text="Zeit nachtragen")
@@ -527,29 +504,41 @@ class MainView(Screen):
             valign="middle",
             font_size=20
         )
-        self.überschrift.bind(size=self.überschrift.setter('text_size'))  # damit halign wirkt
+        self.überschrift.bind(size=self.überschrift.setter('text_size'))
         self.zeitnachtrag_layout.add_widget(self.überschrift)
 
-        # GridLayout nur mit Datum und Uhrzeit
-        self.grid = GridLayout(cols=2, padding=(0, 10, 0, 0), spacing=15, size_hint_y=None, height=110)
+        # GridLayout für Datum, Uhrzeit und Art des Eintrags
+        self.grid = GridLayout(cols=2, padding=(0, 10, 0, 0), spacing=15, size_hint_y=None, height=180)
+
+        # Art des Eintrags (Zeitstempel/Urlaub/Krank)
+        self.grid.add_widget(Label(text="Art des Eintrags: ", size_hint=(None, None), size=(120, 40),
+                            text_size=(120, 40), halign="left", valign="middle"))
+        # In der bestehenden Methode, nach der Definition des Spinners:
+        self.eintrag_art_spinner = Spinner(
+            text="Bitte wählen",
+            values=("Zeitstempel", "Urlaub", "Krank"),
+            size_hint=(None, None),
+            size=(300, 40)
+        )
+        self.grid.add_widget(self.eintrag_art_spinner)
 
         # Datum
-        self.grid.add_widget(Label(text="Datum: ", size_hint=(None, None), size=(60, 35),
-                                text_size=(60, 35), halign="left", valign="middle"))
+        self.grid.add_widget(Label(text="Datum: ", size_hint=(None, None), size=(60, 40),
+                            text_size=(60, 40), halign="left", valign="middle"))
         self.date_input = TextInput(hint_text="TT/MM/JJJJ", size_hint=(None, None),
-                                    size=(145, 35), readonly=True, multiline=False)
-
+                                size=(300, 40), readonly=True, multiline=False)
         self.grid.add_widget(self.date_input)
 
-        # Uhrzeit
-        self.grid.add_widget(Label(text="Uhrzeit: ", size_hint=(None, None), size=(60, 35),
-                                text_size=(60, 35), halign="left", valign="middle"))
+        # Uhrzeit (mit Label in separate Variablen für Opacity-Steuerung)
+        self.time_label = Label(text="Uhrzeit: ", size_hint=(None, None), size=(60, 40),
+                            text_size=(60, 40), halign="left", valign="middle")
+        self.grid.add_widget(self.time_label)
         self.time_input = TextInput(hint_text="HH:MM", size_hint=(None, None),
-                                    size=(145, 35), readonly=True, multiline=False)
+                                size=(300, 40), readonly=True, multiline=False)
         self.grid.add_widget(self.time_input)
 
         # Button zum Nachtragen
-        self.nachtragen_button = Button(text="Zeitstempel nachtragen", size_hint=(None, None), size=(220, 40))
+        self.nachtragen_button = Button(text="Eintrag speichern", size_hint=(None, None), size=(220, 40))
 
         # Rückmeldung
         self.nachtrag_feedback = Label(text="", size_hint=(None, None), size=(500, 60),
@@ -571,7 +560,7 @@ class MainView(Screen):
 
         self.calendar_tab = TabbedPanelItem(text="Kalenderansicht")
         self.calendar_layout = BoxLayout(orientation="vertical")
-        self.month_calendar = MonthCalendar(controller=self.controller)
+        self.month_calendar = MonthCalendar()
         self.calendar_layout.add_widget(self.month_calendar)
         self.calendar_tab.add_widget(self.calendar_layout)
         self.layout.add_widget(self.calendar_tab)
@@ -882,7 +871,7 @@ class MonthCalendar(BoxLayout):
         edit_btn (MDIconButton): Button zum Bearbeiten von Einträgen
     """
 
-    def __init__(self, controller):
+    def __init__(self):
         """
         Initialisiert die Monatsansicht des Kalenders.
         
@@ -890,7 +879,6 @@ class MonthCalendar(BoxLayout):
         """
         
         super().__init__(orientation="vertical")
-        self.controller = controller
         today = datetime.date.today()
         self.year = today.year
         self.month = today.month
@@ -1047,7 +1035,7 @@ class MonthCalendar(BoxLayout):
         if hasattr(self, "day_selected_callback"):
             self.day_selected_callback(date)
 
-    def add_time_row(self, stempelzeit: str):
+    def add_time_row(self, stempelzeit: str, is_problematic):
         """
         Fügt eine Zeile mit einer Stempelzeit zur Detail-Tabelle hinzu.
         
@@ -1058,8 +1046,8 @@ class MonthCalendar(BoxLayout):
         # Layout für eine Zeile (Zeit + Button)
         row_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=30, spacing=10)
 
-        stempelzeit_datetime = dt.strptime(stempelzeit, "%H:%M").time()
-        if stempelzeit_datetime > dt_time(22, 0) or stempelzeit_datetime < dt_time(6, 0):
+
+        if is_problematic:
             label_color = (1, 0.8, 0.8, 1)
         else:
             label_color = (1, 1, 1, 1)
@@ -1083,21 +1071,21 @@ class MonthCalendar(BoxLayout):
 
         # Bearbeiten-Button
         self.edit_button = MDIconButton(
-            icon="pencil",
+            icon="pencil", 
             theme_text_color="Custom",
             text_color=(0, 0, 0, 1)
         )
         edit_wrapper = AnchorLayout(size_hint_x=None, width=50)
         edit_wrapper.add_widget(self.edit_button)
 
-        self.edit_button.bind(on_press=lambda instance, time=stempelzeit: self.open_edit_popup(self.date_label.text, time))
+
 
         self.delete_button = MDIconButton(
             icon="delete",
             theme_text_color="Custom",
             text_color=(0, 0, 0, 1)
         )
-        #self.delete_button.bind(on_press=lambda instance, row=row_layout: self.times_box.remove_widget(row))
+
         delete_wrapper = AnchorLayout(size_hint_x=None, width=50)
         delete_wrapper.add_widget(self.delete_button)
 
