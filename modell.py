@@ -1393,8 +1393,24 @@ class ModellTrackTime():
 
 
 class ModellLogin():
+    """
+    Geschäftslogik-Klasse für Login und Registrierung.
+    
+    Diese Klasse verwaltet:
+    - Registrierung neuer Benutzer mit Validierung
+    - Login-Funktionalität mit Passwortprüfung
+    - Vorgesetzten-Verwaltung
+    - Feedback-Nachrichten für die UI
+    
+    Attributes:
+        neuer_nutzer_* (str/int): Eingabedaten für Registrierung
+        neuer_nutzer_rückmeldung (str): Feedback zur Registrierung
+        anmeldung_* (str): Eingabedaten für Login
+        anmeldung_rückmeldung (str): Feedback zum Login
+        anmeldung_mitarbeiter_id_validiert (int): ID des erfolgreich angemeldeten Nutzers
+    """
     def __init__(self):
-
+        """Initialisiert ein ModellLogin-Objekt mit leeren Standardwerten."""
        self.neuer_nutzer_name = None
        self.neuer_nutzer_passwort = None
        self.neuer_nutzer_passwort_val = None
@@ -1412,11 +1428,25 @@ class ModellLogin():
 
 
     def neuen_nutzer_anlegen(self):
-        # Die Input-Validierung ist bereits sehr gut!
+        """
+        Registriert einen neuen Benutzer in der Datenbank.
+        
+        Führt umfassende Validierungen durch:
+        - Prüfung auf leere Felder
+        - Datumsformat-Validierung
+        - Zahlenformat-Validierung
+        - Passwort-Übereinstimmung
+        - Ampel-Grenzwerte-Logik
+        - Vorgesetzten-Existenz
+        - Benutzername-Eindeutigkeit
+        
+        Setzt neuer_nutzer_rückmeldung mit Erfolgs- oder Fehlermeldung.
+        """
+        # Input-Validierung
         if not self.neuer_nutzer_name:
             self.neuer_nutzer_rückmeldung = "Bitte gib einen Namen ein"
             return
-        # ... (alle anderen 'if not ...')
+        # Weitere Validierungen folgen im Code...
         
         # Die try-except-Blöcke für strptime und int() sind ebenfalls sehr gut.
         try:
@@ -1491,6 +1521,22 @@ class ModellLogin():
 
 
     def login(self):
+        """
+        Authentifiziert einen Benutzer und aktualisiert das letzte Login-Datum.
+        
+        Prozess:
+        1. Datenbankverbindung prüfen
+        2. Benutzer anhand des Namens suchen
+        3. Passwort vergleichen (Klartext - unsicher, nur für Demo!)
+        4. Bei Erfolg: letzter_login aktualisieren und ID speichern
+        
+        Returns:
+            bool: True bei erfolgreichem Login, False bei Fehler
+            
+        Note:
+            Passwörter werden im Klartext gespeichert. In einer Produktionsumgebung
+            sollte ein Hash-Verfahren (z.B. bcrypt) verwendet werden!
+        """
         if not session:
             self.anmeldung_rückmeldung = "Datenbankverbindung fehlgeschlagen."
             return False
