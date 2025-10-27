@@ -63,5 +63,3 @@ cursor.executescript('''
 # Änderungen speichern und Verbindung schließen
 conn.commit()
 conn.close()
-
-print("Datenbank 'system.db' erfolgreich erstellt/initialisiert.")
