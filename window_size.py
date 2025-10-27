@@ -64,8 +64,11 @@ def set_fixed_window_size(size):
             
             Args:
                 window: Kivy Window-Objekt
-                width (int): Neue Breite (wird ignoriert)
-                height (int): Neue Höhe (wird ignoriert)
+                width (int): Neue Breite
+                height (int): Neue Höhe
+            
+            Hinweis: Die Argumente sind durch die Event-Signatur von Kivy erforderlich,
+            werden aber nicht verwendet, da die Fenstergröße fest erzwungen wird.
             """
             if (int(width), int(height)) != _fixed_size:
                 Clock.schedule_once(lambda dt: setattr(Window, "size", _fixed_size), 0)
