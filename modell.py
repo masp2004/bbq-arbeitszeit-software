@@ -1,3 +1,17 @@
+"""
+Modell-Modul für die BBQ Arbeitszeit-Erfassungssoftware.
+
+Dieses Modul enthält alle Datenbank-Models und die Geschäftslogik der Anwendung.
+Es verwaltet:
+
+- Datenbankverbindung und SQLAlchemy-Session
+- Datenbank-Models (mitarbeiter, Zeiteintrag, Abwesenheit, Benachrichtigungen)
+- Geschäftslogik-Klassen (ModellTrackTime, ModellLogin, CalculateTime)
+- ArbZG-Validierungsfunktionen (Ruhezeiten, Pausen, Arbeitszeiten)
+
+Die Models folgen dem SQLAlchemy ORM-Pattern und verwenden eine SQLite-Datenbank.
+"""
+
 from sqlalchemy import Column, Integer, String, Date, create_engine, select, Time, Boolean, ForeignKey, UniqueConstraint, CheckConstraint
 import sqlalchemy.orm as saorm
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -9,6 +23,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 try:
+    # Datenbankverbindung aufbauen
+    # SQLite-Datenbank wird im Programmverzeichnis erstellt
     engine = create_engine("sqlite:///system.db", echo=False) # echo=True ist im Prod-Betrieb zu "laut"
     Base = saorm.declarative_base()
     Session = saorm.sessionmaker(bind=engine)
@@ -18,9 +34,27 @@ except SQLAlchemyError as e:
     # Wenn das passiert, kann die App nicht funktionieren.
     # In einer realen App würde man hier vielleicht beenden.
     # Für Kivy lassen wir es, der Controller fängt die Fehler ab.
-    session = None 
+    session = None
 
 class mitarbeiter(Base):
+    """
+    SQLAlchemy Model für Mitarbeiter/Benutzer der Anwendung.
+    
+    Speichert alle relevanten Informationen eines Mitarbeiters einschließlich
+    Vertragsdaten, Passwort, Gleitzeit und Ampel-Grenzwerten.
+    
+    Attributes:
+        mitarbeiter_id (int): Eindeutige ID (Primary Key)
+        name (str): Vor- und Nachname (unique, max 30 Zeichen)
+        password (str): Passwort (max 15 Zeichen, unverschlüsselt)
+        vertragliche_wochenstunden (int): Soll-Arbeitszeit pro Woche
+        geburtsdatum (date): Geburtsdatum zur Überprüfung des Alters (Minderjährige)
+        gleitzeit (int): Aktuelle kumulierte Gleitzeit in Stunden
+        letzter_login (date): Datum des letzten Logins
+        ampel_grün (int): Oberer Grenzwert für grüne Ampel (Gleitzeit)
+        ampel_rot (int): Unterer Grenzwert für rote Ampel (Gleitzeit)
+        vorgesetzter_id (int): Foreign Key zum Vorgesetzten (optional)
+    """
     __tablename__ = "users"
     mitarbeiter_id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(30), unique=True, nullable=False)
@@ -34,26 +68,48 @@ class mitarbeiter(Base):
     vorgesetzter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"))
 
     def is_minor_on_date(self, datum):
-            """Prüft, ob der Mitarbeiter an bestimmten datum minderjährig ist (unter 18)."""
-            # Input-Validierung
-            if not self.geburtsdatum:
-                logger.warning(f"is_minor_on_date für {self.name} ohne Geburtsdatum aufgerufen.")
-                return False
-            if not isinstance(datum, date):
-                logger.error(f"is_minor_on_date erhielt ungültigen Datumstyp: {type(datum)}")
-                try:
-                    # Versuch einer Notfall-Konvertierung
-                    datum = datetime.strptime(str(datum), "%Y-%m-%d").date()
-                except ValueError:
-                    return False # Konnte nicht konvertiert werden
+        """
+        Prüft, ob der Mitarbeiter an einem bestimmten Datum minderjährig ist (unter 18).
+        
+        Wichtig für die Anwendung der speziellen Jugendarbeitsschutz-Regeln.
+        
+        Args:
+            datum (date): Das zu prüfende Datum
             
+        Returns:
+            bool: True wenn Mitarbeiter an diesem Datum unter 18 Jahre alt ist, sonst False
+        """
+        # Input-Validierung
+        if not self.geburtsdatum:
+            logger.warning(f"is_minor_on_date für {self.name} ohne Geburtsdatum aufgerufen.")
+            return False
+        if not isinstance(datum, date):
+            logger.error(f"is_minor_on_date erhielt ungültigen Datumstyp: {type(datum)}")
+            try:
+                # Versuch einer Notfall-Konvertierung
+                datum = datetime.strptime(str(datum), "%Y-%m-%d").date()
+            except ValueError:
+                return False # Konnte nicht konvertiert werden
+        
     
-            age = datum.year - self.geburtsdatum.year - ((datum.month, datum.day) < (self.geburtsdatum.month, self.geburtsdatum.day))
-            return age < 18
+        age = datum.year - self.geburtsdatum.year - ((datum.month, datum.day) < (self.geburtsdatum.month, self.geburtsdatum.day))
+        return age < 18
 
 
 class Abwesenheit(Base):
-    # ... (Keine Änderungen nötig) ...
+    """
+    SQLAlchemy Model für Abwesenheiten (Urlaub, Krankheit, etc.).
+    
+    Speichert Abwesenheiten eines Mitarbeiters, die bei der Gleitzeitberechnung
+    berücksichtigt werden müssen.
+    
+    Attributes:
+        id (int): Eindeutige ID (Primary Key)
+        mitarbeiter_id (int): Foreign Key zum Mitarbeiter
+        datum (date): Datum der Abwesenheit
+        typ (str): Art der Abwesenheit ('Urlaub', 'Krankheit', 'Fortbildung', 'Sonstiges')
+        genehmigt (bool): Ob die Abwesenheit genehmigt wurde (Default: False)
+    """
     __tablename__ = "abwesenheiten"
     id = Column(Integer, primary_key=True, autoincrement=True)
     mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
@@ -62,7 +118,19 @@ class Abwesenheit(Base):
     genehmigt = Column(Boolean, nullable=False, default=False)
 
 class Zeiteintrag(Base):
-    # ... (Keine Änderungen nötig) ...
+    """
+    SQLAlchemy Model für Zeitstempel (Ein-/Ausstempeln).
+    
+    Speichert einzelne Zeitstempel eines Mitarbeiters. Paarweise Einträge
+    (Start-Ende) bilden eine Arbeitsperiode.
+    
+    Attributes:
+        id (int): Eindeutige ID (Primary Key)
+        mitarbeiter_id (int): Foreign Key zum Mitarbeiter
+        zeit (time): Uhrzeit des Stempels
+        datum (date): Datum des Stempels
+        validiert (bool): Ob dieser Eintrag bereits für Gleitzeitberechnung verwendet wurde
+    """
     __tablename__ = "zeiteinträge"
     id = Column(Integer, primary_key=True, autoincrement=True)
     mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
@@ -71,6 +139,29 @@ class Zeiteintrag(Base):
     validiert = Column(Boolean, nullable=False, default=False)
 
 class Benachrichtigungen(Base):
+    """
+    SQLAlchemy Model für Benachrichtigungen/Warnungen an den Mitarbeiter.
+    
+    Speichert Warnungen über ArbZG-Verstöße, fehlende Stempel, etc.
+    Benachrichtigungscodes definieren die Art der Warnung.
+    
+    Attributes:
+        id (int): Eindeutige ID (Primary Key)
+        mitarbeiter_id (int): Foreign Key zum Mitarbeiter
+        benachrichtigungs_code (int): Code der Benachrichtigungsart (siehe CODES-Dict)
+        datum (date): Datum, auf das sich die Benachrichtigung bezieht (optional)
+        
+    Class Attributes:
+        CODES (dict): Mapping von Benachrichtigungscodes zu Textbausteinen
+            Code 1: Fehlender Arbeitstag ohne Stempel
+            Code 2: Ungerader Stempel (Start ohne Ende)
+            Code 3: Ruhezeit-Verstoß
+            Code 4: Durchschnittliche Arbeitszeit > 8h
+            Code 5: Maximale Tagesarbeitszeit überschritten
+            Code 6: Arbeit an Sonn-/Feiertag
+            Code 7: Wochenstunden-Verstoß (Minderjährige)
+            Code 8: Arbeitstage-Verstoß (Minderjährige)
+    """
     __tablename__ = "benachrichtigungen"
     # ... (Spalten bleiben gleich) ...
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -96,6 +187,15 @@ class Benachrichtigungen(Base):
     )
 
     def create_fehlermeldung(self):
+        """
+        Erstellt einen lesbaren Fehlertext aus dem Benachrichtigungs-Code.
+        
+        Verwendet das CODES-Dictionary und das gespeicherte Datum, um eine
+        vollständige Benachrichtigungsmeldung zu generieren.
+        
+        Returns:
+            str: Formatierte Fehlermeldung für den Benutzer
+        """
         # Wandle Code in String um, um Suffix-Probleme (1.1 vs 1) zu vermeiden
         code_str = str(self.benachrichtigungs_code)
 
@@ -131,88 +231,148 @@ class Benachrichtigungen(Base):
 
 
 class CalculateTime():
-     def __new__(cls, eintrag1, eintrag2, nutzer):
-         if eintrag1.datum != eintrag2.datum:
-             return None
-         return super().__new__(cls)
-
-     def __init__(self, eintrag1, eintrag2, nutzer):
-         self.nutzer = nutzer
-         self.datum = eintrag1.datum
-         self.startzeit = eintrag1.zeit
-         self.endzeit = eintrag2.zeit
-
-         try:
-            self.start_dt = datetime.combine(self.datum, self.startzeit)
-            self.end_dt = datetime.combine(self.datum, self.endzeit)
-            
-            # Sicherstellen, dass die Endzeit nach der Startzeit liegt
-            if self.end_dt < self.start_dt:
-                logger.warning(f"Endzeit {self.end_dt} liegt vor Startzeit {self.start_dt}. Zeit wird als 0 behandelt.")
-                self.start_dt, self.end_dt = self.end_dt, self.start_dt # Zeiten tauschen? Oder 0?
-                # Annahme: Es war ein Fehler, wir setzen die gearbeitete Zeit auf 0
-                self.gearbeitete_zeit = timedelta()
-            else:
-                 self.gearbeitete_zeit = self.end_dt - self.start_dt
-         
-         except (TypeError, ValueError) as e:
-             logger.error(f"Fehler beim Kombinieren von Datum/Zeit: {e}", exc_info=True)
-             self.gearbeitete_zeit = timedelta() # Standard-Fallback
-
-     def gesetzliche_pausen_hinzufügen(self):
-        # Validierung
-        if not self.nutzer:
-            logger.error("gesetzliche_pausen_hinzufügen ohne 'nutzer' aufgerufen.")
-            return
-        
+    """
+    Hilfsklasse zur Berechnung von Arbeitszeiten zwischen zwei Zeitstempeln.
     
-        if self.nutzer.is_minor_on_date(self.datum):
-            if self.gearbeitete_zeit >= timedelta(hours=6):
-                self.gearbeitete_zeit -= timedelta(minutes=60)
-            elif self.gearbeitete_zeit >= timedelta(hours=4.5):
-                self.gearbeitete_zeit -= timedelta(minutes=30)
-        else:
-            if self.gearbeitete_zeit >= timedelta(hours=9):
-                self.gearbeitete_zeit -= timedelta(minutes=45)
-            elif self.gearbeitete_zeit >= timedelta(hours=6):
-                self.gearbeitete_zeit -= timedelta(minutes=30)
-
-
-     def arbeitsfenster_beachten(self):
+    Diese Klasse berechnet die tatsächlich gearbeitete Zeit zwischen zwei Stempeln
+    unter Berücksichtigung von:
+    - Gesetzlichen Pausen (abhängig von Alter und Arbeitszeit)
+    - Arbeitsfenster (06:00-22:00 für Erwachsene, 06:00-20:00 für Minderjährige)
+    
+    Wichtig: Instanzen werden nur erstellt, wenn beide Stempel am selben Tag sind.
+    
+    Attributes:
+        nutzer (mitarbeiter): Der Mitarbeiter, für den die Zeit berechnet wird
+        datum (date): Das Datum der Zeiteinträge
+        startzeit (time): Startzeit des Arbeitszeitraums
+        endzeit (time): Endzeit des Arbeitszeitraums
+        start_dt (datetime): Kombiniertes Start-Datum/Zeit
+        end_dt (datetime): Kombiniertes End-Datum/Zeit
+        gearbeitete_zeit (timedelta): Berechnete Nettoarbeitszeit
+    """
+    def __new__(cls, eintrag1, eintrag2, nutzer):
         """
-        Entfernt Arbeitszeit, die außerhalb des erlaubten Fensters liegt.
-        """
-        # Validierung
-        if not self.nutzer:
-            logger.error("arbeitsfenster_beachten ohne 'nutzer' aufgerufen.")
-            return
-        if not hasattr(self, 'start_dt') or not hasattr(self, 'end_dt'):
-            logger.error("arbeitsfenster_beachten: start_dt/end_dt nicht initialisiert.")
-            return
-
-
-        is_minor = self.nutzer.is_minor_on_date(self.datum)
-        nachtruhe_zeit = time(20, 0) if is_minor else time(22, 0)
-        morgenruhe_ende = datetime.combine(self.datum, time(6, 0))
-        nachtruhe_start = datetime.combine(self.datum, nachtruhe_zeit)
-
-        abzuziehende_zeit = timedelta()
-
-        # 1. Überschneidung mit der Morgenruhe (00:00 - 06:00)
-        overlap_start_morgen = max(self.start_dt, datetime.combine(self.datum, time(0, 0)))
-        overlap_end_morgen = min(self.end_dt, morgenruhe_ende)
-
-        if overlap_end_morgen > overlap_start_morgen:
-            abzuziehende_zeit += overlap_end_morgen - overlap_start_morgen
-
-        # 2. Überschneidung mit der Nachtruhe (22:00/20:00 - 24:00)
-        overlap_start_nacht = max(self.start_dt, nachtruhe_start)
-        overlap_end_nacht = min(self.end_dt, datetime.combine(self.datum, time(23, 59, 59)))
-
-        if overlap_end_nacht > overlap_start_nacht:
-            abzuziehende_zeit += overlap_end_nacht - overlap_start_nacht
+        Factory-Methode zum Erstellen einer CalculateTime-Instanz.
+        
+        Erstellt nur eine Instanz, wenn beide Einträge am selben Tag sind.
+        
+        Args:
+            eintrag1 (Zeiteintrag): Erster Zeitstempel
+            eintrag2 (Zeiteintrag): Zweiter Zeitstempel  
+            nutzer (mitarbeiter): Mitarbeiter-Objekt
             
-        self.gearbeitete_zeit -= abzuziehende_zeit
+        Returns:
+            CalculateTime oder None: Instanz nur wenn Datum übereinstimmt
+        """
+        if eintrag1.datum != eintrag2.datum:
+            return None
+        return super().__new__(cls)
+
+    def __init__(self, eintrag1, eintrag2, nutzer):
+        """
+        Initialisiert die Zeitberechnung.
+        
+        Args:
+            eintrag1 (Zeiteintrag): Erster Zeitstempel (sollte Start sein)
+            eintrag2 (Zeiteintrag): Zweiter Zeitstempel (sollte Ende sein)
+            nutzer (mitarbeiter): Mitarbeiter-Objekt für Pausenberechnung
+        """
+        self.nutzer = nutzer
+        self.datum = eintrag1.datum
+        self.startzeit = eintrag1.zeit
+        self.endzeit = eintrag2.zeit
+
+        try:
+           self.start_dt = datetime.combine(self.datum, self.startzeit)
+           self.end_dt = datetime.combine(self.datum, self.endzeit)
+           
+           # Sicherstellen, dass die Endzeit nach der Startzeit liegt
+           if self.end_dt < self.start_dt:
+               logger.warning(f"Endzeit {self.end_dt} liegt vor Startzeit {self.start_dt}. Zeit wird als 0 behandelt.")
+               self.start_dt, self.end_dt = self.end_dt, self.start_dt # Zeiten tauschen? Oder 0?
+               # Annahme: Es war ein Fehler, wir setzen die gearbeitete Zeit auf 0
+               self.gearbeitete_zeit = timedelta()
+           else:
+                self.gearbeitete_zeit = self.end_dt - self.start_dt
+        
+        except (TypeError, ValueError) as e:
+            logger.error(f"Fehler beim Kombinieren von Datum/Zeit: {e}", exc_info=True)
+            self.gearbeitete_zeit = timedelta() # Standard-Fallback
+
+    def gesetzliche_pausen_hinzufügen(self):
+        """
+        Zieht gesetzlich vorgeschriebene Pausen von der Arbeitszeit ab.
+        
+        Pausenregelung nach ArbZG und JArbSchG:
+        
+        Minderjährige:
+        - >= 4.5h: 30 Minuten Pause
+        - >= 6h: 60 Minuten Pause
+        
+        Erwachsene:
+        - >= 6h: 30 Minuten Pause
+        - >= 9h: 45 Minuten Pause
+        """
+       # Validierung
+       if not self.nutzer:
+           logger.error("gesetzliche_pausen_hinzufügen ohne 'nutzer' aufgerufen.")
+           return
+       
+   
+       if self.nutzer.is_minor_on_date(self.datum):
+           if self.gearbeitete_zeit >= timedelta(hours=6):
+               self.gearbeitete_zeit -= timedelta(minutes=60)
+           elif self.gearbeitete_zeit >= timedelta(hours=4.5):
+               self.gearbeitete_zeit -= timedelta(minutes=30)
+       else:
+           if self.gearbeitete_zeit >= timedelta(hours=9):
+               self.gearbeitete_zeit -= timedelta(minutes=45)
+           elif self.gearbeitete_zeit >= timedelta(hours=6):
+               self.gearbeitete_zeit -= timedelta(minutes=30)
+
+
+    def arbeitsfenster_beachten(self):
+        """
+        Entfernt Arbeitszeit außerhalb des erlaubten Arbeitsfensters.
+        
+        Arbeitsfenster nach ArbZG und JArbSchG:
+        - Minderjährige: 06:00 - 20:00 Uhr
+        - Erwachsene: 06:00 - 22:00 Uhr
+        
+        Zeit außerhalb dieser Fenster wird nicht zur Gleitzeit gezählt,
+        aber die Stempel bleiben für Ruhezeit-Prüfungen relevant.
+        """
+       # Validierung
+       if not self.nutzer:
+           logger.error("arbeitsfenster_beachten ohne 'nutzer' aufgerufen.")
+           return
+       if not hasattr(self, 'start_dt') or not hasattr(self, 'end_dt'):
+           logger.error("arbeitsfenster_beachten: start_dt/end_dt nicht initialisiert.")
+           return
+
+
+       is_minor = self.nutzer.is_minor_on_date(self.datum)
+       nachtruhe_zeit = time(20, 0) if is_minor else time(22, 0)
+       morgenruhe_ende = datetime.combine(self.datum, time(6, 0))
+       nachtruhe_start = datetime.combine(self.datum, nachtruhe_zeit)
+
+       abzuziehende_zeit = timedelta()
+
+       # 1. Überschneidung mit der Morgenruhe (00:00 - 06:00)
+       overlap_start_morgen = max(self.start_dt, datetime.combine(self.datum, time(0, 0)))
+       overlap_end_morgen = min(self.end_dt, morgenruhe_ende)
+
+       if overlap_end_morgen > overlap_start_morgen:
+           abzuziehende_zeit += overlap_end_morgen - overlap_start_morgen
+
+       # 2. Überschneidung mit der Nachtruhe (22:00/20:00 - 24:00)
+       overlap_start_nacht = max(self.start_dt, nachtruhe_start)
+       overlap_end_nacht = min(self.end_dt, datetime.combine(self.datum, time(23, 59, 59)))
+
+       if overlap_end_nacht > overlap_start_nacht:
+           abzuziehende_zeit += overlap_end_nacht - overlap_start_nacht
+           
+       self.gearbeitete_zeit -= abzuziehende_zeit
         
 
 
@@ -299,6 +459,12 @@ class ModellTrackTime():
 
     
     def get_employees(self):
+        """
+        Lädt die Liste der Mitarbeiter für Vorgesetzten-Ansicht.
+        
+        Lädt alle Mitarbeiter, die dem aktuellen Nutzer unterstellt sind,
+        plus den aktuellen Nutzer selbst.
+        """
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -312,6 +478,12 @@ class ModellTrackTime():
             self.mitarbeiter = [self.aktueller_nutzer_name] # Fallback
 
     def get_id(self):
+        """
+        Ermittelt die Mitarbeiter-ID anhand des Namens für Kalenderansicht.
+        
+        Wird verwendet, wenn ein Vorgesetzter die Zeiteinträge eines
+        unterstellten Mitarbeiters ansehen möchte.
+        """
         if not self.aktuelle_kalendereinträge_für_name:
             self.aktuelle_kalendereinträge_für_id = self.aktueller_nutzer_id
             return
@@ -330,6 +502,15 @@ class ModellTrackTime():
             logger.error(f"Fehler bei get_id für '{self.aktuelle_kalendereinträge_für_name}': {e}", exc_info=True)
 
     def get_zeiteinträge(self):
+        """
+        Lädt Zeiteinträge für ein bestimmtes Datum mit Validierungsstatus.
+        
+        Lädt alle Stempel für ein ausgewähltes Datum und prüft, ob sie
+        außerhalb der erlaubten Arbeitszeiten liegen (problematisch).
+        
+        Sets:
+            zeiteinträge_bestimmtes_datum: Liste von [Zeiteintrag, is_problematic] Tupeln
+        """
         if self.aktueller_nutzer_id is None or self.bestimmtes_datum is None:
             return
         if not session: return
@@ -382,6 +563,11 @@ class ModellTrackTime():
             self.zeiteinträge_bestimmtes_datum = []
 
     def get_user_info(self):
+        """
+        Lädt alle relevanten Informationen des angemeldeten Nutzers aus der DB.
+        
+        Aktualisiert alle aktueller_nutzer_* Attribute mit den DB-Werten.
+        """
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -402,6 +588,14 @@ class ModellTrackTime():
             logger.error(f"DB-Fehler in get_user_info: {e}", exc_info=True)
 
     def set_ampel_farbe(self):
+        """
+        Bestimmt die Ampelfarbe anhand der aktuellen Gleitzeit.
+        
+        Setzt ampel_status auf:
+        - 'green': Gleitzeit >= ampel_grün
+        - 'yellow': ampel_rot < Gleitzeit < ampel_grün  
+        - 'red': Gleitzeit <= ampel_rot
+        """
         try:
             # Sicherstellen, dass Werte nicht None sind
             gleitzeit = float(self.aktueller_nutzer_gleitzeit or 0)
@@ -419,6 +613,7 @@ class ModellTrackTime():
             self.ampel_status = "yellow" # Fallback
 
     def get_messages(self):
+        """Lädt alle Benachrichtigungen des aktuellen Nutzers aus der DB."""
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -431,6 +626,15 @@ class ModellTrackTime():
             self.benachrichtigungen = []
 
     def update_passwort(self):
+        """
+        Ändert das Passwort des aktuellen Nutzers.
+        
+        Validiert:
+        - Passwort nicht leer
+        - Passwort und Wiederholung stimmen überein
+        
+        Setzt feedback_neues_passwort mit Erfolgs- oder Fehlermeldung.
+        """
         # Input-Validierung (ist schon gut)
         if not self.neues_passwort:
             self.feedback_neues_passwort = "Bitte gebe ein passwort ein"
@@ -461,6 +665,12 @@ class ModellTrackTime():
             self.feedback_neues_passwort = "Nutzer nicht gefunden."
 
     def stempel_hinzufügen(self):
+        """
+        Fügt einen neuen Zeitstempel mit aktueller Uhrzeit hinzu (Stempeln).
+        
+        Erstellt einen Zeiteintrag mit aktuellem Datum/Zeit für den
+        angemeldeten Nutzer. Wird für Ein-/Ausstempeln verwendet.
+        """
         # Gekapselte DB-Operation
         def _db_op():
             stempel = Zeiteintrag(
@@ -475,6 +685,12 @@ class ModellTrackTime():
         # Feedback wird im Controller gehandhabt
 
     def get_stamps_for_today(self):
+        """
+        Lädt alle Zeitstempel des heutigen Tages für Timer-Berechnung.
+        
+        Returns:
+            list: Liste von Zeiteintrag-Objekten, chronologisch sortiert
+        """
         if not self.aktueller_nutzer_id: return []
         if not session: return []
 
@@ -605,7 +821,24 @@ class ModellTrackTime():
         elif isinstance(result, dict):
             logger.error(f"Konnte Benachrichtigung (Code {code}) nicht hinzufügen: {result.get('details')}")
 
+    # ===================================================================
+    # ArbZG / JArbSchG Validierungsmethoden
+    # ===================================================================
+    # Die folgenden Methoden prüfen die Einhaltung des Arbeitszeitgesetzes (ArbZG)
+    # und des Jugendarbeitsschutzgesetzes (JArbSchG).
+    # 
+    # Sie werden nach dem Login aufgerufen und erstellen Benachrichtigungen bei Verstößen.
+    # Alle Methoden verwenden _add_benachrichtigung_safe() um Duplikate zu vermeiden.
+    # ===================================================================
+
     def checke_wochenstunden_minderjaehrige(self):
+        """
+        Prüft 40-Stunden-Woche für Minderjährige (JArbSchG §8).
+        
+        Iteriert über alle Wochen seit letztem Login und prüft ob
+        die Wochenarbeitszeit 40 Stunden überschreitet.
+        Erstellt Benachrichtigung (Code 7) bei Verstoß.
+        """
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -657,6 +890,12 @@ class ModellTrackTime():
 
 
     def checke_arbeitstage_pro_woche_minderjaehrige(self):
+        """
+        Prüft 5-Tage-Woche für Minderjährige (JArbSchG §15).
+        
+        Prüft ob in einer Woche an mehr als 5 Tagen gearbeitet wurde.
+        Erstellt Benachrichtigung (Code 8) bei Verstoß.
+        """
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -697,6 +936,17 @@ class ModellTrackTime():
 
 
     def checke_arbeitstage(self):
+        """
+        Prüft ob an allen Werktagen seit letztem Login gestempelt wurde.
+        
+        Für jeden Werktag (Mo-Fr) ohne Stempel:
+        - Prüft auf Abwesenheit (Urlaub/Krankheit)
+        - Zieht tägliche Arbeitszeit von Gleitzeit ab
+        - Erstellt Benachrichtigung (Code 1)
+        
+        Returns:
+            list: Liste der fehlenden Tage (ohne Abwesenheiten)
+        """
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -1233,8 +1483,24 @@ class ModellTrackTime():
 
 
 class ModellLogin():
+    """
+    Geschäftslogik-Klasse für Login und Registrierung.
+    
+    Diese Klasse verwaltet:
+    - Registrierung neuer Benutzer mit Validierung
+    - Login-Funktionalität mit Passwortprüfung
+    - Vorgesetzten-Verwaltung
+    - Feedback-Nachrichten für die UI
+    
+    Attributes:
+        neuer_nutzer_* (str/int): Eingabedaten für Registrierung
+        neuer_nutzer_rückmeldung (str): Feedback zur Registrierung
+        anmeldung_* (str): Eingabedaten für Login
+        anmeldung_rückmeldung (str): Feedback zum Login
+        anmeldung_mitarbeiter_id_validiert (int): ID des erfolgreich angemeldeten Nutzers
+    """
     def __init__(self):
-
+        """Initialisiert ein ModellLogin-Objekt mit leeren Standardwerten."""
        self.neuer_nutzer_name = None
        self.neuer_nutzer_passwort = None
        self.neuer_nutzer_passwort_val = None
@@ -1252,11 +1518,25 @@ class ModellLogin():
 
 
     def neuen_nutzer_anlegen(self):
-        # Die Input-Validierung ist bereits sehr gut!
+        """
+        Registriert einen neuen Benutzer in der Datenbank.
+        
+        Führt umfassende Validierungen durch:
+        - Prüfung auf leere Felder
+        - Datumsformat-Validierung
+        - Zahlenformat-Validierung
+        - Passwort-Übereinstimmung
+        - Ampel-Grenzwerte-Logik
+        - Vorgesetzten-Existenz
+        - Benutzername-Eindeutigkeit
+        
+        Setzt neuer_nutzer_rückmeldung mit Erfolgs- oder Fehlermeldung.
+        """
+        # Input-Validierung
         if not self.neuer_nutzer_name:
             self.neuer_nutzer_rückmeldung = "Bitte gib einen Namen ein"
             return
-        # ... (alle anderen 'if not ...')
+        # Weitere Validierungen folgen im Code...
         
         # Die try-except-Blöcke für strptime und int() sind ebenfalls sehr gut.
         try:
@@ -1331,6 +1611,22 @@ class ModellLogin():
 
 
     def login(self):
+        """
+        Authentifiziert einen Benutzer und aktualisiert das letzte Login-Datum.
+        
+        Prozess:
+        1. Datenbankverbindung prüfen
+        2. Benutzer anhand des Namens suchen
+        3. Passwort vergleichen (Klartext - unsicher, nur für Demo!)
+        4. Bei Erfolg: letzter_login aktualisieren und ID speichern
+        
+        Returns:
+            bool: True bei erfolgreichem Login, False bei Fehler
+            
+        Note:
+            Passwörter werden im Klartext gespeichert. In einer Produktionsumgebung
+            sollte ein Hash-Verfahren (z.B. bcrypt) verwendet werden!
+        """
         if not session:
             self.anmeldung_rückmeldung = "Datenbankverbindung fehlgeschlagen."
             return False

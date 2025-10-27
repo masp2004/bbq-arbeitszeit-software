@@ -1,3 +1,20 @@
+"""
+Controller-Modul für die BBQ Arbeitszeit-Erfassungssoftware.
+
+Dieses Modul implementiert den Controller im MVC-Pattern und ist verantwortlich für:
+
+- Initialisierung und Verwaltung aller Views (Login, Register, Main)
+- Binding von UI-Events an Callback-Funktionen
+- Kommunikation zwischen Model und View
+- Datensynchronisation (Update-Methoden)
+- Event-Handling mit Fehlerbehandlung (_bind_safe)
+- Timer-Logik für laufende Arbeitszeit-Anzeige
+- Koordination von Workflows (Login -> Daten laden -> UI aktualisieren)
+
+Der Controller verwendet einen Safe-Binding-Mechanismus, der alle Callbacks in
+try-except-Blöcke wrapp um die Stabilität der Anwendung zu gewährleisten.
+"""
+
 from kivy.uix.screenmanager import ScreenManager
 from modell import ModellLogin, ModellTrackTime
 from view import LoginView, RegisterView, MainView
@@ -14,7 +31,37 @@ logger = logging.getLogger(__name__)
 
 
 class Controller():
+    """
+    Haupt-Controller der Anwendung (MVC-Pattern).
+    
+    Der Controller koordiniert die Interaktion zwischen Models (ModellLogin, ModellTrackTime)
+    und Views (LoginView, RegisterView, MainView). Er implementiert:
+    
+    - Safe Event-Binding mit automatischer Fehlerbehandlung
+    - Datensynchronisation zwischen Model und View
+    - View-Wechsel und Fenstergrößen-Management
+    - Timer-Funktionalität für laufende Arbeitszeit
+    - Callback-Handling für alle UI-Events
+    
+    Attributes:
+        model_login (ModellLogin): Model für Login/Registrierung
+        model_track_time (ModellTrackTime): Model für Zeiterfassung
+        sm (ScreenManager): Manager für Screen-Wechsel
+        register_view/login_view/main_view: Die drei Haupt-Views
+        active_time_input: Aktuelles Zeiteingabe-Feld für TimePicker
+        timer_event: Clock-Event für Timer-Update
+        start_time_dt: Startzeit der aktuellen Arbeitsperiode
+    """
     def __init__(self):
+        """
+        Initialisiert den Controller und alle zugehörigen Komponenten.
+        
+        Erstellt Models, Views und ScreenManager, bindet alle Events
+        und setzt den initialen Screen auf "login".
+        
+        Raises:
+            Exception: Bei kritischen Fehlern während der Initialisierung
+        """
         try:
             self.model_login = ModellLogin()
             self.model_track_time = ModellTrackTime()
