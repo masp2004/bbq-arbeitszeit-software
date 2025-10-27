@@ -821,7 +821,24 @@ class ModellTrackTime():
         elif isinstance(result, dict):
             logger.error(f"Konnte Benachrichtigung (Code {code}) nicht hinzufügen: {result.get('details')}")
 
+    # ===================================================================
+    # ArbZG / JArbSchG Validierungsmethoden
+    # ===================================================================
+    # Die folgenden Methoden prüfen die Einhaltung des Arbeitszeitgesetzes (ArbZG)
+    # und des Jugendarbeitsschutzgesetzes (JArbSchG).
+    # 
+    # Sie werden nach dem Login aufgerufen und erstellen Benachrichtigungen bei Verstößen.
+    # Alle Methoden verwenden _add_benachrichtigung_safe() um Duplikate zu vermeiden.
+    # ===================================================================
+
     def checke_wochenstunden_minderjaehrige(self):
+        """
+        Prüft 40-Stunden-Woche für Minderjährige (JArbSchG §8).
+        
+        Iteriert über alle Wochen seit letztem Login und prüft ob
+        die Wochenarbeitszeit 40 Stunden überschreitet.
+        Erstellt Benachrichtigung (Code 7) bei Verstoß.
+        """
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -873,6 +890,12 @@ class ModellTrackTime():
 
 
     def checke_arbeitstage_pro_woche_minderjaehrige(self):
+        """
+        Prüft 5-Tage-Woche für Minderjährige (JArbSchG §15).
+        
+        Prüft ob in einer Woche an mehr als 5 Tagen gearbeitet wurde.
+        Erstellt Benachrichtigung (Code 8) bei Verstoß.
+        """
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -913,6 +936,17 @@ class ModellTrackTime():
 
 
     def checke_arbeitstage(self):
+        """
+        Prüft ob an allen Werktagen seit letztem Login gestempelt wurde.
+        
+        Für jeden Werktag (Mo-Fr) ohne Stempel:
+        - Prüft auf Abwesenheit (Urlaub/Krankheit)
+        - Zieht tägliche Arbeitszeit von Gleitzeit ab
+        - Erstellt Benachrichtigung (Code 1)
+        
+        Returns:
+            list: Liste der fehlenden Tage (ohne Abwesenheiten)
+        """
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
