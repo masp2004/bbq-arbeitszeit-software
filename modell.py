@@ -459,6 +459,12 @@ class ModellTrackTime():
 
     
     def get_employees(self):
+        """
+        Lädt die Liste der Mitarbeiter für Vorgesetzten-Ansicht.
+        
+        Lädt alle Mitarbeiter, die dem aktuellen Nutzer unterstellt sind,
+        plus den aktuellen Nutzer selbst.
+        """
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -472,6 +478,12 @@ class ModellTrackTime():
             self.mitarbeiter = [self.aktueller_nutzer_name] # Fallback
 
     def get_id(self):
+        """
+        Ermittelt die Mitarbeiter-ID anhand des Namens für Kalenderansicht.
+        
+        Wird verwendet, wenn ein Vorgesetzter die Zeiteinträge eines
+        unterstellten Mitarbeiters ansehen möchte.
+        """
         if not self.aktuelle_kalendereinträge_für_name:
             self.aktuelle_kalendereinträge_für_id = self.aktueller_nutzer_id
             return
@@ -490,6 +502,15 @@ class ModellTrackTime():
             logger.error(f"Fehler bei get_id für '{self.aktuelle_kalendereinträge_für_name}': {e}", exc_info=True)
 
     def get_zeiteinträge(self):
+        """
+        Lädt Zeiteinträge für ein bestimmtes Datum mit Validierungsstatus.
+        
+        Lädt alle Stempel für ein ausgewähltes Datum und prüft, ob sie
+        außerhalb der erlaubten Arbeitszeiten liegen (problematisch).
+        
+        Sets:
+            zeiteinträge_bestimmtes_datum: Liste von [Zeiteintrag, is_problematic] Tupeln
+        """
         if self.aktueller_nutzer_id is None or self.bestimmtes_datum is None:
             return
         if not session: return
@@ -542,6 +563,11 @@ class ModellTrackTime():
             self.zeiteinträge_bestimmtes_datum = []
 
     def get_user_info(self):
+        """
+        Lädt alle relevanten Informationen des angemeldeten Nutzers aus der DB.
+        
+        Aktualisiert alle aktueller_nutzer_* Attribute mit den DB-Werten.
+        """
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -562,6 +588,14 @@ class ModellTrackTime():
             logger.error(f"DB-Fehler in get_user_info: {e}", exc_info=True)
 
     def set_ampel_farbe(self):
+        """
+        Bestimmt die Ampelfarbe anhand der aktuellen Gleitzeit.
+        
+        Setzt ampel_status auf:
+        - 'green': Gleitzeit >= ampel_grün
+        - 'yellow': ampel_rot < Gleitzeit < ampel_grün  
+        - 'red': Gleitzeit <= ampel_rot
+        """
         try:
             # Sicherstellen, dass Werte nicht None sind
             gleitzeit = float(self.aktueller_nutzer_gleitzeit or 0)
@@ -579,6 +613,7 @@ class ModellTrackTime():
             self.ampel_status = "yellow" # Fallback
 
     def get_messages(self):
+        """Lädt alle Benachrichtigungen des aktuellen Nutzers aus der DB."""
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -591,6 +626,15 @@ class ModellTrackTime():
             self.benachrichtigungen = []
 
     def update_passwort(self):
+        """
+        Ändert das Passwort des aktuellen Nutzers.
+        
+        Validiert:
+        - Passwort nicht leer
+        - Passwort und Wiederholung stimmen überein
+        
+        Setzt feedback_neues_passwort mit Erfolgs- oder Fehlermeldung.
+        """
         # Input-Validierung (ist schon gut)
         if not self.neues_passwort:
             self.feedback_neues_passwort = "Bitte gebe ein passwort ein"
@@ -621,6 +665,12 @@ class ModellTrackTime():
             self.feedback_neues_passwort = "Nutzer nicht gefunden."
 
     def stempel_hinzufügen(self):
+        """
+        Fügt einen neuen Zeitstempel mit aktueller Uhrzeit hinzu (Stempeln).
+        
+        Erstellt einen Zeiteintrag mit aktuellem Datum/Zeit für den
+        angemeldeten Nutzer. Wird für Ein-/Ausstempeln verwendet.
+        """
         # Gekapselte DB-Operation
         def _db_op():
             stempel = Zeiteintrag(
@@ -635,6 +685,12 @@ class ModellTrackTime():
         # Feedback wird im Controller gehandhabt
 
     def get_stamps_for_today(self):
+        """
+        Lädt alle Zeitstempel des heutigen Tages für Timer-Berechnung.
+        
+        Returns:
+            list: Liste von Zeiteintrag-Objekten, chronologisch sortiert
+        """
         if not self.aktueller_nutzer_id: return []
         if not session: return []
 
