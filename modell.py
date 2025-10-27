@@ -306,12 +306,12 @@ class CalculateTime():
         Pausenregelung nach ArbZG und JArbSchG:
         
         Minderjährige:
-        - > 4.5h: 30 Minuten Pause
-        - > 6h: 60 Minuten Pause
+        - >= 4.5h: 30 Minuten Pause
+        - >= 6h: 60 Minuten Pause
         
         Erwachsene:
-        - > 6h: 30 Minuten Pause
-        - > 9h: 45 Minuten Pause
+        - >= 6h: 30 Minuten Pause
+        - >= 9h: 45 Minuten Pause
         """
        # Validierung
        if not self.nutzer:
