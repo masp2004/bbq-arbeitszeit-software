@@ -1,7 +1,29 @@
+"""
+Datenbank-Initialisierungsskript für die BBQ Arbeitszeit-Erfassungssoftware.
+
+Dieses Skript erstellt die SQLite-Datenbank und alle notwendigen Tabellen.
+Es sollte einmalig vor dem ersten Start der Anwendung ausgeführt werden.
+
+Erstellte Tabellen:
+- users: Mitarbeiter-Stammdaten
+- zeiteinträge: Zeitstempel für Ein-/Ausstempeln
+- benachrichtigungen: Warnungen und Hinweise
+- abwesenheiten: Urlaub, Krankheit, etc.
+
+Das Skript verwendet sqlite3 direkt (nicht SQLAlchemy), um eine einfache
+und portable Initialisierung zu ermöglichen.
+
+Usage:
+    python create_db.py
+"""
+
 import sqlite3
 
+# Verbindung zur Datenbank aufbauen (erstellt Datei, falls nicht vorhanden)
 conn = sqlite3.connect('system.db')
 cursor = conn.cursor()
+
+# SQL-Skript zum Erstellen aller Tabellen
 cursor.executescript('''
         CREATE TABLE IF NOT EXISTS users (
             mitarbeiter_id INTEGER PRIMARY KEY,
@@ -37,5 +59,9 @@ cursor.executescript('''
             );         
                   
     ''')
+
+# Änderungen speichern und Verbindung schließen
 conn.commit()
 conn.close()
+
+print("Datenbank 'system.db' erfolgreich erstellt/initialisiert.")

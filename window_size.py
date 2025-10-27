@@ -1,16 +1,41 @@
+"""
+Window-Size-Management-Modul für die BBQ Arbeitszeit-Erfassungssoftware.
+
+Dieses Modul stellt Funktionen bereit, um die Fenstergröße der Kivy-Anwendung
+zu fixieren und Größenänderungen durch den Benutzer zu verhindern.
+
+Die Fixierung erfolgt durch:
+- Deaktivierung von Window.resizable
+- Setzen von Minimum-Werten
+- Event-Binding um Resize-Versuche rückgängig zu machen
+
+Dies ist notwendig, da die Anwendung für feste Fenstergrößen designt wurde
+und dynamisches Resizing nicht unterstützt wird.
+"""
+
 from kivy.core.window import Window
 from kivy.clock import Clock
 
+# Globale Variablen für Fenstergröße und Event-Handler
 _fixed_size = None
 _enforce_handler = None
 
 def set_fixed_window_size(size):
-        """
-        Setzt Fenstergröße, deaktiviert Resize und sorgt dafür,
-        dass das Fenster nicht verändert werden kann.
-        """
-        global _fixed_size, _enforce_handler
-        _fixed_size = (int(size[0]), int(size[1]))
+    """
+    Setzt die Fenstergröße und verhindert Änderungen durch den Benutzer.
+    
+    Diese Funktion deaktiviert Resize-Funktionalität und bindet einen Event-Handler,
+    der versucht, jede Größenänderung sofort rückgängig zu machen.
+    
+    Args:
+        size (tuple): Gewünschte Fenstergröße als (width, height) Tupel
+        
+    Example:
+        >>> set_fixed_window_size((800, 600))
+        # Fenster wird auf 800x600 fixiert
+    """
+    global _fixed_size, _enforce_handler
+    _fixed_size = (int(size[0]), int(size[1]))
 
         # Größe setzen und Resize deaktivieren
         Window.size = _fixed_size
@@ -31,7 +56,17 @@ def set_fixed_window_size(size):
         
         # Neuen Handler definieren, der das Fenster bei Resize wieder korrekt setzt
         def _enforce(window, width, height):
-
+            """
+            Interner Event-Handler zum Erzwingen der festen Fenstergröße.
+            
+            Wird automatisch aufgerufen, wenn Window.size geändert wird.
+            Setzt die Größe asynchron zurück auf die fixierte Größe.
+            
+            Args:
+                window: Kivy Window-Objekt
+                width (int): Neue Breite (wird ignoriert)
+                height (int): Neue Höhe (wird ignoriert)
+            """
             if (int(width), int(height)) != _fixed_size:
                 Clock.schedule_once(lambda dt: setattr(Window, "size", _fixed_size), 0)
         
