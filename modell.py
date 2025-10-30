@@ -313,22 +313,22 @@ class CalculateTime():
         - >= 6h: 30 Minuten Pause
         - >= 9h: 45 Minuten Pause
         """
-       # Validierung
-       if not self.nutzer:
-           logger.error("gesetzliche_pausen_hinzufügen ohne 'nutzer' aufgerufen.")
-           return
+        # Validierung
+        if not self.nutzer:
+            logger.error("gesetzliche_pausen_hinzufügen ohne 'nutzer' aufgerufen.")
+            return
        
    
-       if self.nutzer.is_minor_on_date(self.datum):
-           if self.gearbeitete_zeit >= timedelta(hours=6):
-               self.gearbeitete_zeit -= timedelta(minutes=60)
-           elif self.gearbeitete_zeit >= timedelta(hours=4.5):
-               self.gearbeitete_zeit -= timedelta(minutes=30)
-       else:
-           if self.gearbeitete_zeit >= timedelta(hours=9):
-               self.gearbeitete_zeit -= timedelta(minutes=45)
-           elif self.gearbeitete_zeit >= timedelta(hours=6):
-               self.gearbeitete_zeit -= timedelta(minutes=30)
+        if self.nutzer.is_minor_on_date(self.datum):
+            if self.gearbeitete_zeit >= timedelta(hours=6):
+                self.gearbeitete_zeit -= timedelta(minutes=60)
+            elif self.gearbeitete_zeit >= timedelta(hours=4.5):
+                self.gearbeitete_zeit -= timedelta(minutes=30)
+        else:
+            if self.gearbeitete_zeit >= timedelta(hours=9):
+                self.gearbeitete_zeit -= timedelta(minutes=45)
+            elif self.gearbeitete_zeit >= timedelta(hours=6):
+                self.gearbeitete_zeit -= timedelta(minutes=30)
 
 
     def arbeitsfenster_beachten(self):
@@ -342,37 +342,37 @@ class CalculateTime():
         Zeit außerhalb dieser Fenster wird nicht zur Gleitzeit gezählt,
         aber die Stempel bleiben für Ruhezeit-Prüfungen relevant.
         """
-       # Validierung
-       if not self.nutzer:
-           logger.error("arbeitsfenster_beachten ohne 'nutzer' aufgerufen.")
-           return
-       if not hasattr(self, 'start_dt') or not hasattr(self, 'end_dt'):
-           logger.error("arbeitsfenster_beachten: start_dt/end_dt nicht initialisiert.")
-           return
+        # Validierung
+        if not self.nutzer:
+            logger.error("arbeitsfenster_beachten ohne 'nutzer' aufgerufen.")
+            return
+        if not hasattr(self, 'start_dt') or not hasattr(self, 'end_dt'):
+            logger.error("arbeitsfenster_beachten: start_dt/end_dt nicht initialisiert.")
+            return
 
 
-       is_minor = self.nutzer.is_minor_on_date(self.datum)
-       nachtruhe_zeit = time(20, 0) if is_minor else time(22, 0)
-       morgenruhe_ende = datetime.combine(self.datum, time(6, 0))
-       nachtruhe_start = datetime.combine(self.datum, nachtruhe_zeit)
+        is_minor = self.nutzer.is_minor_on_date(self.datum)
+        nachtruhe_zeit = time(20, 0) if is_minor else time(22, 0)
+        morgenruhe_ende = datetime.combine(self.datum, time(6, 0))
+        nachtruhe_start = datetime.combine(self.datum, nachtruhe_zeit)
 
-       abzuziehende_zeit = timedelta()
+        abzuziehende_zeit = timedelta()
 
-       # 1. Überschneidung mit der Morgenruhe (00:00 - 06:00)
-       overlap_start_morgen = max(self.start_dt, datetime.combine(self.datum, time(0, 0)))
-       overlap_end_morgen = min(self.end_dt, morgenruhe_ende)
+        # 1. Überschneidung mit der Morgenruhe (00:00 - 06:00)
+        overlap_start_morgen = max(self.start_dt, datetime.combine(self.datum, time(0, 0)))
+        overlap_end_morgen = min(self.end_dt, morgenruhe_ende)
 
-       if overlap_end_morgen > overlap_start_morgen:
-           abzuziehende_zeit += overlap_end_morgen - overlap_start_morgen
+        if overlap_end_morgen > overlap_start_morgen:
+            abzuziehende_zeit += overlap_end_morgen - overlap_start_morgen
 
-       # 2. Überschneidung mit der Nachtruhe (22:00/20:00 - 24:00)
-       overlap_start_nacht = max(self.start_dt, nachtruhe_start)
-       overlap_end_nacht = min(self.end_dt, datetime.combine(self.datum, time(23, 59, 59)))
+        # 2. Überschneidung mit der Nachtruhe (22:00/20:00 - 24:00)
+        overlap_start_nacht = max(self.start_dt, nachtruhe_start)
+        overlap_end_nacht = min(self.end_dt, datetime.combine(self.datum, time(23, 59, 59)))
 
-       if overlap_end_nacht > overlap_start_nacht:
-           abzuziehende_zeit += overlap_end_nacht - overlap_start_nacht
-           
-       self.gearbeitete_zeit -= abzuziehende_zeit
+        if overlap_end_nacht > overlap_start_nacht:
+            abzuziehende_zeit += overlap_end_nacht - overlap_start_nacht
+            
+        self.gearbeitete_zeit -= abzuziehende_zeit
         
 
 
@@ -1501,19 +1501,19 @@ class ModellLogin():
     """
     def __init__(self):
         """Initialisiert ein ModellLogin-Objekt mit leeren Standardwerten."""
-       self.neuer_nutzer_name = None
-       self.neuer_nutzer_passwort = None
-       self.neuer_nutzer_passwort_val = None
-       self.neuer_nutzer_vertragliche_wochenstunden = None
-       self.neuer_nutzer_geburtsdatum = None
-       self.neuer_nutzer_rückmeldung = ""
-       self.neuer_nutzer_vorgesetzter = None
-       self.neuer_nutzer_grün = None
-       self.neuer_nutzer_rot = None
-       self.anmeldung_name = None
-       self.anmeldung_passwort = None
-       self.anmeldung_rückmeldung = ""
-       self.anmeldung_mitarbeiter_id_validiert = None
+        self.neuer_nutzer_name = None
+        self.neuer_nutzer_passwort = None
+        self.neuer_nutzer_passwort_val = None
+        self.neuer_nutzer_vertragliche_wochenstunden = None
+        self.neuer_nutzer_geburtsdatum = None
+        self.neuer_nutzer_rückmeldung = ""
+        self.neuer_nutzer_vorgesetzter = None
+        self.neuer_nutzer_grün = None
+        self.neuer_nutzer_rot = None
+        self.anmeldung_name = None
+        self.anmeldung_passwort = None
+        self.anmeldung_rückmeldung = ""
+        self.anmeldung_mitarbeiter_id_validiert = None
        
 
 

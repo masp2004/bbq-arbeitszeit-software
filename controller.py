@@ -165,6 +165,8 @@ class Controller():
 
     def update_view_time_tracking(self):
         # ... (Inhalt bleibt gleich) ...
+        self.main_view.welcome_label.text = f"Willkommen zurück, {self.model_login.anmeldung_name}!"
+
         # Hinzufügen einer Konvertierung, um sicherzustellen, dass es ein String ist
         gleitzeit_str = f"{self.model_track_time.aktueller_nutzer_gleitzeit:.2f}"
         self.main_view.anzeige_gleitzeit_wert_label.text = gleitzeit_str
