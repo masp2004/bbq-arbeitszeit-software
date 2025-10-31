@@ -1,18 +1,3 @@
-"""
-Haupteinstiegspunkt der BBQ Arbeitszeit-Erfassungssoftware.
-
-Dieses Modul initialisiert die Kivy/KivyMD-Anwendung und konfiguriert das Logging.
-Es ist verantwortlich für:
-
-- Konfiguration des Logging-Systems (Datei + Konsole)
-- Initialisierung der TimeTrackingApp
-- Fehlerbehandlung beim Start
-- Anwendungs-Metadaten (Theme, Icon, Titel)
-
-Das Logging wird mit einem RotatingFileHandler konfiguriert, der bis zu 5
-Log-Dateien à 1MB vorhält.
-"""
-
 import os
 import logging
 import logging.handlers
@@ -60,31 +45,7 @@ logger = logging.getLogger(__name__)
 
 
 class TimeTrackingApp(MDApp):
-    """
-    Haupt-Anwendungsklasse der Zeiterfassungssoftware.
-    
-    Diese Klasse erweitert KivyMD's MDApp und ist verantwortlich für:
-    - Initialisierung des Controllers
-    - Bereitstellung des ScreenManagers
-    - Anwendungs-Konfiguration (Theme, Icon, Titel)
-    
-    Attributes:
-        controller (Controller): Der Haupt-Controller der Anwendung
-        screen_manager (ScreenManager): Manager für die verschiedenen Screens
-    """
     def __init__(self, **kwargs):
-        """
-        Initialisiert die TimeTrackingApp.
-        
-        Erstellt den Controller und holt den ScreenManager.
-        Bei Fehlern wird ein kritischer Log-Eintrag erstellt und die Exception weitergereicht.
-        
-        Args:
-            **kwargs: Keyword-Argumente für MDApp
-            
-        Raises:
-            Exception: Bei Fehler während der Controller-Initialisierung
-        """
         super().__init__(**kwargs)
         try:
             self.controller = Controller()
@@ -97,14 +58,6 @@ class TimeTrackingApp(MDApp):
             raise # App-Start abbrechen
 
     def build(self):
-        """
-        Baut die Anwendungsoberfläche auf.
-        
-        Konfiguriert Theme, Icon und Titel der Anwendung.
-        
-        Returns:
-            ScreenManager: Der konfigurierte ScreenManager für die App
-        """
         logger.info("Build-Methode wird aufgerufen.")
         try:
             self.icon = os.path.join(os.path.dirname(__file__), "velqor.png")
