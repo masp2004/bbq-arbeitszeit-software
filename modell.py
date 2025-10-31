@@ -1,31 +1,34 @@
-"""
-Modell-Modul für die BBQ Arbeitszeit-Erfassungssoftware.
-
-Dieses Modul enthält alle Datenbank-Models und die Geschäftslogik der Anwendung.
-Es verwaltet:
-
-- Datenbankverbindung und SQLAlchemy-Session
-- Datenbank-Models (mitarbeiter, Zeiteintrag, Abwesenheit, Benachrichtigungen)
-- Geschäftslogik-Klassen (ModellTrackTime, ModellLogin, CalculateTime)
-- ArbZG-Validierungsfunktionen (Ruhezeiten, Pausen, Arbeitszeiten)
-
-Die Models folgen dem SQLAlchemy ORM-Pattern und verwenden eine SQLite-Datenbank.
-"""
-
 from sqlalchemy import Column, Integer, String, Date, create_engine, select, Time, Boolean, ForeignKey, UniqueConstraint, CheckConstraint
 import sqlalchemy.orm as saorm
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from datetime import datetime, date, timedelta, time
+from pathlib import Path
 import holidays 
 import logging
+import sys
 
 # Logger für dieses Modul
 logger = logging.getLogger(__name__)
 
+def _resolve_db_path(db_name: str = "system.db") -> Path:
+    """Ermittelt den absoluten Pfad zur Datenbank, kompatibel mit PyInstaller."""
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        candidates = []
+        if hasattr(sys, "_MEIPASS"):
+            candidates.append(Path(sys._MEIPASS) / db_name)
+        candidates.append(exe_dir / db_name)
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[-1]
+    return Path(__file__).resolve().parent / db_name
+
+
+DB_PATH = _resolve_db_path()
+
 try:
-    # Datenbankverbindung aufbauen
-    # SQLite-Datenbank wird im Programmverzeichnis erstellt
-    engine = create_engine("sqlite:///system.db", echo=False) # echo=True ist im Prod-Betrieb zu "laut"
+    engine = create_engine(f"sqlite:///{DB_PATH.as_posix()}", echo=False) # echo=True ist im Prod-Betrieb zu "laut"
     Base = saorm.declarative_base()
     Session = saorm.sessionmaker(bind=engine)
     session = Session()
@@ -34,27 +37,9 @@ except SQLAlchemyError as e:
     # Wenn das passiert, kann die App nicht funktionieren.
     # In einer realen App würde man hier vielleicht beenden.
     # Für Kivy lassen wir es, der Controller fängt die Fehler ab.
-    session = None
+    session = None 
 
 class mitarbeiter(Base):
-    """
-    SQLAlchemy Model für Mitarbeiter/Benutzer der Anwendung.
-    
-    Speichert alle relevanten Informationen eines Mitarbeiters einschließlich
-    Vertragsdaten, Passwort, Gleitzeit und Ampel-Grenzwerten.
-    
-    Attributes:
-        mitarbeiter_id (int): Eindeutige ID (Primary Key)
-        name (str): Vor- und Nachname (unique, max 30 Zeichen)
-        password (str): Passwort (max 15 Zeichen, unverschlüsselt)
-        vertragliche_wochenstunden (int): Soll-Arbeitszeit pro Woche
-        geburtsdatum (date): Geburtsdatum zur Überprüfung des Alters (Minderjährige)
-        gleitzeit (int): Aktuelle kumulierte Gleitzeit in Stunden
-        letzter_login (date): Datum des letzten Logins
-        ampel_grün (int): Oberer Grenzwert für grüne Ampel (Gleitzeit)
-        ampel_rot (int): Unterer Grenzwert für rote Ampel (Gleitzeit)
-        vorgesetzter_id (int): Foreign Key zum Vorgesetzten (optional)
-    """
     __tablename__ = "users"
     mitarbeiter_id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(30), unique=True, nullable=False)
@@ -68,48 +53,26 @@ class mitarbeiter(Base):
     vorgesetzter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"))
 
     def is_minor_on_date(self, datum):
-        """
-        Prüft, ob der Mitarbeiter an einem bestimmten Datum minderjährig ist (unter 18).
-        
-        Wichtig für die Anwendung der speziellen Jugendarbeitsschutz-Regeln.
-        
-        Args:
-            datum (date): Das zu prüfende Datum
+            """Prüft, ob der Mitarbeiter an bestimmten datum minderjährig ist (unter 18)."""
+            # Input-Validierung
+            if not self.geburtsdatum:
+                logger.warning(f"is_minor_on_date für {self.name} ohne Geburtsdatum aufgerufen.")
+                return False
+            if not isinstance(datum, date):
+                logger.error(f"is_minor_on_date erhielt ungültigen Datumstyp: {type(datum)}")
+                try:
+                    # Versuch einer Notfall-Konvertierung
+                    datum = datetime.strptime(str(datum), "%Y-%m-%d").date()
+                except ValueError:
+                    return False # Konnte nicht konvertiert werden
             
-        Returns:
-            bool: True wenn Mitarbeiter an diesem Datum unter 18 Jahre alt ist, sonst False
-        """
-        # Input-Validierung
-        if not self.geburtsdatum:
-            logger.warning(f"is_minor_on_date für {self.name} ohne Geburtsdatum aufgerufen.")
-            return False
-        if not isinstance(datum, date):
-            logger.error(f"is_minor_on_date erhielt ungültigen Datumstyp: {type(datum)}")
-            try:
-                # Versuch einer Notfall-Konvertierung
-                datum = datetime.strptime(str(datum), "%Y-%m-%d").date()
-            except ValueError:
-                return False # Konnte nicht konvertiert werden
-        
     
-        age = datum.year - self.geburtsdatum.year - ((datum.month, datum.day) < (self.geburtsdatum.month, self.geburtsdatum.day))
-        return age < 18
+            age = datum.year - self.geburtsdatum.year - ((datum.month, datum.day) < (self.geburtsdatum.month, self.geburtsdatum.day))
+            return age < 18
 
 
 class Abwesenheit(Base):
-    """
-    SQLAlchemy Model für Abwesenheiten (Urlaub, Krankheit, etc.).
-    
-    Speichert Abwesenheiten eines Mitarbeiters, die bei der Gleitzeitberechnung
-    berücksichtigt werden müssen.
-    
-    Attributes:
-        id (int): Eindeutige ID (Primary Key)
-        mitarbeiter_id (int): Foreign Key zum Mitarbeiter
-        datum (date): Datum der Abwesenheit
-        typ (str): Art der Abwesenheit ('Urlaub', 'Krankheit', 'Fortbildung', 'Sonstiges')
-        genehmigt (bool): Ob die Abwesenheit genehmigt wurde (Default: False)
-    """
+    # ... (Keine Änderungen nötig) ...
     __tablename__ = "abwesenheiten"
     id = Column(Integer, primary_key=True, autoincrement=True)
     mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
@@ -118,19 +81,7 @@ class Abwesenheit(Base):
     genehmigt = Column(Boolean, nullable=False, default=False)
 
 class Zeiteintrag(Base):
-    """
-    SQLAlchemy Model für Zeitstempel (Ein-/Ausstempeln).
-    
-    Speichert einzelne Zeitstempel eines Mitarbeiters. Paarweise Einträge
-    (Start-Ende) bilden eine Arbeitsperiode.
-    
-    Attributes:
-        id (int): Eindeutige ID (Primary Key)
-        mitarbeiter_id (int): Foreign Key zum Mitarbeiter
-        zeit (time): Uhrzeit des Stempels
-        datum (date): Datum des Stempels
-        validiert (bool): Ob dieser Eintrag bereits für Gleitzeitberechnung verwendet wurde
-    """
+    # ... (Keine Änderungen nötig) ...
     __tablename__ = "zeiteinträge"
     id = Column(Integer, primary_key=True, autoincrement=True)
     mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
@@ -139,35 +90,14 @@ class Zeiteintrag(Base):
     validiert = Column(Boolean, nullable=False, default=False)
 
 class Benachrichtigungen(Base):
-    """
-    SQLAlchemy Model für Benachrichtigungen/Warnungen an den Mitarbeiter.
-    
-    Speichert Warnungen über ArbZG-Verstöße, fehlende Stempel, etc.
-    Benachrichtigungscodes definieren die Art der Warnung.
-    
-    Attributes:
-        id (int): Eindeutige ID (Primary Key)
-        mitarbeiter_id (int): Foreign Key zum Mitarbeiter
-        benachrichtigungs_code (int): Code der Benachrichtigungsart (siehe CODES-Dict)
-        datum (date): Datum, auf das sich die Benachrichtigung bezieht (optional)
-        
-    Class Attributes:
-        CODES (dict): Mapping von Benachrichtigungscodes zu Textbausteinen
-            Code 1: Fehlender Arbeitstag ohne Stempel
-            Code 2: Ungerader Stempel (Start ohne Ende)
-            Code 3: Ruhezeit-Verstoß
-            Code 4: Durchschnittliche Arbeitszeit > 8h
-            Code 5: Maximale Tagesarbeitszeit überschritten
-            Code 6: Arbeit an Sonn-/Feiertag
-            Code 7: Wochenstunden-Verstoß (Minderjährige)
-            Code 8: Arbeitstage-Verstoß (Minderjährige)
-    """
     __tablename__ = "benachrichtigungen"
     # ... (Spalten bleiben gleich) ...
     id = Column(Integer, primary_key=True, autoincrement=True)
     mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
     benachrichtigungs_code = Column(Integer, nullable=False)
     datum = Column(Date)
+    ist_popup = Column(Boolean, nullable=False, default=False)  # True = PopUp, False = normale Benachrichtigung
+    popup_uhrzeit = Column(Time, nullable=True)  # Optionale Uhrzeit für zeitgesteuerte PopUps
 
     CODES = {
         1.1:"An den Tag",
@@ -179,7 +109,9 @@ class Benachrichtigungen(Base):
         5:["Achung am", "wurde die maximale gesetzlich zulässsige Arbeitszeit überschritten."],
         6: ["Achtung, am", "wurde an einem Sonn- oder Feiertag gearbeitet."],
         7: ["In der Woche vom", "wurde die maximale Wochenarbeitszeit von 40 Stunden für Minderjährige überschritten."],
-        8: ["In der Woche vom", "wurde an mehr als 5 Tagen gearbeitet, was für Minderjährige nicht zulässig ist."]
+        8: ["In der Woche vom", "wurde an mehr als 5 Tagen gearbeitet, was für Minderjährige nicht zulässig ist."],
+        9: "Ihr erlaubtes Arbeitsfenster endet bald.",  # Arbeitsfenster-Warnung
+        10: "Sie erreichen bald die maximale tägliche Arbeitszeit."  # Max. Arbeitszeit -Warnung
     }
 
     __table_args__ = (
@@ -187,15 +119,6 @@ class Benachrichtigungen(Base):
     )
 
     def create_fehlermeldung(self):
-        """
-        Erstellt einen lesbaren Fehlertext aus dem Benachrichtigungs-Code.
-        
-        Verwendet das CODES-Dictionary und das gespeicherte Datum, um eine
-        vollständige Benachrichtigungsmeldung zu generieren.
-        
-        Returns:
-            str: Formatierte Fehlermeldung für den Benutzer
-        """
         # Wandle Code in String um, um Suffix-Probleme (1.1 vs 1) zu vermeiden
         code_str = str(self.benachrichtigungs_code)
 
@@ -231,94 +154,41 @@ class Benachrichtigungen(Base):
 
 
 class CalculateTime():
-    """
-    Hilfsklasse zur Berechnung von Arbeitszeiten zwischen zwei Zeitstempeln.
-    
-    Diese Klasse berechnet die tatsächlich gearbeitete Zeit zwischen zwei Stempeln
-    unter Berücksichtigung von:
-    - Gesetzlichen Pausen (abhängig von Alter und Arbeitszeit)
-    - Arbeitsfenster (06:00-22:00 für Erwachsene, 06:00-20:00 für Minderjährige)
-    
-    Wichtig: Instanzen werden nur erstellt, wenn beide Stempel am selben Tag sind.
-    
-    Attributes:
-        nutzer (mitarbeiter): Der Mitarbeiter, für den die Zeit berechnet wird
-        datum (date): Das Datum der Zeiteinträge
-        startzeit (time): Startzeit des Arbeitszeitraums
-        endzeit (time): Endzeit des Arbeitszeitraums
-        start_dt (datetime): Kombiniertes Start-Datum/Zeit
-        end_dt (datetime): Kombiniertes End-Datum/Zeit
-        gearbeitete_zeit (timedelta): Berechnete Nettoarbeitszeit
-    """
-    def __new__(cls, eintrag1, eintrag2, nutzer):
-        """
-        Factory-Methode zum Erstellen einer CalculateTime-Instanz.
-        
-        Erstellt nur eine Instanz, wenn beide Einträge am selben Tag sind.
-        
-        Args:
-            eintrag1 (Zeiteintrag): Erster Zeitstempel
-            eintrag2 (Zeiteintrag): Zweiter Zeitstempel  
-            nutzer (mitarbeiter): Mitarbeiter-Objekt
+     def __new__(cls, eintrag1, eintrag2, nutzer):
+         if eintrag1.datum != eintrag2.datum:
+             return None
+         return super().__new__(cls)
+
+     def __init__(self, eintrag1, eintrag2, nutzer):
+         self.nutzer = nutzer
+         self.datum = eintrag1.datum
+         self.startzeit = eintrag1.zeit
+         self.endzeit = eintrag2.zeit
+
+         try:
+            self.start_dt = datetime.combine(self.datum, self.startzeit)
+            self.end_dt = datetime.combine(self.datum, self.endzeit)
             
-        Returns:
-            CalculateTime oder None: Instanz nur wenn Datum übereinstimmt
-        """
-        if eintrag1.datum != eintrag2.datum:
-            return None
-        return super().__new__(cls)
+            # Sicherstellen, dass die Endzeit nach der Startzeit liegt
+            if self.end_dt < self.start_dt:
+                logger.warning(f"Endzeit {self.end_dt} liegt vor Startzeit {self.start_dt}. Zeit wird als 0 behandelt.")
+                self.start_dt, self.end_dt = self.end_dt, self.start_dt # Zeiten tauschen? Oder 0?
+                # Annahme: Es war ein Fehler, wir setzen die gearbeitete Zeit auf 0
+                self.gearbeitete_zeit = timedelta()
+            else:
+                 self.gearbeitete_zeit = self.end_dt - self.start_dt
+         
+         except (TypeError, ValueError) as e:
+             logger.error(f"Fehler beim Kombinieren von Datum/Zeit: {e}", exc_info=True)
+             self.gearbeitete_zeit = timedelta() # Standard-Fallback
 
-    def __init__(self, eintrag1, eintrag2, nutzer):
-        """
-        Initialisiert die Zeitberechnung.
-        
-        Args:
-            eintrag1 (Zeiteintrag): Erster Zeitstempel (sollte Start sein)
-            eintrag2 (Zeiteintrag): Zweiter Zeitstempel (sollte Ende sein)
-            nutzer (mitarbeiter): Mitarbeiter-Objekt für Pausenberechnung
-        """
-        self.nutzer = nutzer
-        self.datum = eintrag1.datum
-        self.startzeit = eintrag1.zeit
-        self.endzeit = eintrag2.zeit
-
-        try:
-           self.start_dt = datetime.combine(self.datum, self.startzeit)
-           self.end_dt = datetime.combine(self.datum, self.endzeit)
-           
-           # Sicherstellen, dass die Endzeit nach der Startzeit liegt
-           if self.end_dt < self.start_dt:
-               logger.warning(f"Endzeit {self.end_dt} liegt vor Startzeit {self.start_dt}. Zeit wird als 0 behandelt.")
-               self.start_dt, self.end_dt = self.end_dt, self.start_dt # Zeiten tauschen? Oder 0?
-               # Annahme: Es war ein Fehler, wir setzen die gearbeitete Zeit auf 0
-               self.gearbeitete_zeit = timedelta()
-           else:
-                self.gearbeitete_zeit = self.end_dt - self.start_dt
-        
-        except (TypeError, ValueError) as e:
-            logger.error(f"Fehler beim Kombinieren von Datum/Zeit: {e}", exc_info=True)
-            self.gearbeitete_zeit = timedelta() # Standard-Fallback
-
-    def gesetzliche_pausen_hinzufügen(self):
-        """
-        Zieht gesetzlich vorgeschriebene Pausen von der Arbeitszeit ab.
-        
-        Pausenregelung nach ArbZG und JArbSchG:
-        
-        Minderjährige:
-        - >= 4.5h: 30 Minuten Pause
-        - >= 6h: 60 Minuten Pause
-        
-        Erwachsene:
-        - >= 6h: 30 Minuten Pause
-        - >= 9h: 45 Minuten Pause
-        """
+     def gesetzliche_pausen_hinzufügen(self):
         # Validierung
         if not self.nutzer:
             logger.error("gesetzliche_pausen_hinzufügen ohne 'nutzer' aufgerufen.")
             return
-       
-   
+        
+    
         if self.nutzer.is_minor_on_date(self.datum):
             if self.gearbeitete_zeit >= timedelta(hours=6):
                 self.gearbeitete_zeit -= timedelta(minutes=60)
@@ -331,16 +201,9 @@ class CalculateTime():
                 self.gearbeitete_zeit -= timedelta(minutes=30)
 
 
-    def arbeitsfenster_beachten(self):
+     def arbeitsfenster_beachten(self):
         """
-        Entfernt Arbeitszeit außerhalb des erlaubten Arbeitsfensters.
-        
-        Arbeitsfenster nach ArbZG und JArbSchG:
-        - Minderjährige: 06:00 - 20:00 Uhr
-        - Erwachsene: 06:00 - 22:00 Uhr
-        
-        Zeit außerhalb dieser Fenster wird nicht zur Gleitzeit gezählt,
-        aber die Stempel bleiben für Ruhezeit-Prüfungen relevant.
+        Entfernt Arbeitszeit, die außerhalb des erlaubten Fensters liegt.
         """
         # Validierung
         if not self.nutzer:
@@ -392,6 +255,7 @@ class ModellTrackTime():
 
         self.zeiteinträge_bestimmtes_datum = None
         self.bestimmtes_datum = None
+        self.gleitzeit_bestimmtes_datum_stunden = 0.0
 
         self.kummulierte_gleitzeit_jahr = None
         self.kummulierte_gleitzeit_quartal = None
@@ -414,12 +278,44 @@ class ModellTrackTime():
 
 
         self.benachrichtigungen = []
+        self.urlaubstage_aktueller_monat = []
+        self.krankheitstage_aktueller_monat = []
 
 
         self.feedback_manueller_stempel = ""
         self.feedback_arbeitstage = ""
         self.feedback_stempel = ""
         self.feedback_neues_passwort = ""
+
+    def ist_sonn_oder_feiertag(self, datum):
+        """
+        Prüft, ob ein bestimmtes Datum ein Sonntag oder Feiertag ist.
+        
+        Args:
+            datum: date-Objekt oder String im Format '%d/%m/%Y'
+            
+        Returns:
+            bool: True wenn Sonntag oder Feiertag, sonst False
+        """
+        # Datum konvertieren falls String
+        if isinstance(datum, str):
+            try:
+                datum = datetime.strptime(datum, "%d/%m/%Y").date()
+            except ValueError:
+                logger.warning(f"ist_sonn_oder_feiertag: Ungültiges Datumsformat '{datum}'")
+                return False
+        
+        # Prüfen ob Sonntag (weekday() == 6)
+        if datum.weekday() == 6:
+            return True
+        
+        # Feiertage für das Jahr holen
+        try:
+            de_holidays = holidays.Germany(years=datum.year)
+            return datum in de_holidays
+        except Exception as e:
+            logger.error(f"Fehler beim Prüfen der Feiertage: {e}", exc_info=True)
+            return False
 
 
     # === Hilfsfunktion für sichere DB-Operationen ===
@@ -459,12 +355,6 @@ class ModellTrackTime():
 
     
     def get_employees(self):
-        """
-        Lädt die Liste der Mitarbeiter für Vorgesetzten-Ansicht.
-        
-        Lädt alle Mitarbeiter, die dem aktuellen Nutzer unterstellt sind,
-        plus den aktuellen Nutzer selbst.
-        """
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -478,12 +368,6 @@ class ModellTrackTime():
             self.mitarbeiter = [self.aktueller_nutzer_name] # Fallback
 
     def get_id(self):
-        """
-        Ermittelt die Mitarbeiter-ID anhand des Namens für Kalenderansicht.
-        
-        Wird verwendet, wenn ein Vorgesetzter die Zeiteinträge eines
-        unterstellten Mitarbeiters ansehen möchte.
-        """
         if not self.aktuelle_kalendereinträge_für_name:
             self.aktuelle_kalendereinträge_für_id = self.aktueller_nutzer_id
             return
@@ -502,23 +386,17 @@ class ModellTrackTime():
             logger.error(f"Fehler bei get_id für '{self.aktuelle_kalendereinträge_für_name}': {e}", exc_info=True)
 
     def get_zeiteinträge(self):
-        """
-        Lädt Zeiteinträge für ein bestimmtes Datum mit Validierungsstatus.
-        
-        Lädt alle Stempel für ein ausgewähltes Datum und prüft, ob sie
-        außerhalb der erlaubten Arbeitszeiten liegen (problematisch).
-        
-        Sets:
-            zeiteinträge_bestimmtes_datum: Liste von [Zeiteintrag, is_problematic] Tupeln
-        """
         if self.aktueller_nutzer_id is None or self.bestimmtes_datum is None:
             return
         if not session: return
 
+        self.gleitzeit_bestimmtes_datum_stunden = 0.0
+
         try:
-            nutzer = session.get(mitarbeiter, self.aktueller_nutzer_id)
+            ausgewählte_mitarbeiter_id = self.aktuelle_kalendereinträge_für_id or self.aktueller_nutzer_id
+            nutzer = session.get(mitarbeiter, ausgewählte_mitarbeiter_id)
             if not nutzer:
-                logger.error(f"get_zeiteinträge: Nutzer {self.aktueller_nutzer_id} nicht gefunden.")
+                logger.error(f"get_zeiteinträge: Nutzer {ausgewählte_mitarbeiter_id} nicht gefunden.")
                 return
 
             # Datum-Parsing validieren
@@ -535,7 +413,7 @@ class ModellTrackTime():
                 ).order_by(Zeiteintrag.datum, Zeiteintrag.zeit)
             
             einträge = session.scalars(stmt).all()
-            
+
             einträge_mit_validierung = []
             for eintrag in einträge:
                 is_unvalid = False
@@ -553,21 +431,48 @@ class ModellTrackTime():
                 
                 einträge_mit_validierung.append([eintrag, is_unvalid])
 
+            # Arbeitszeit und Gleitzeit für den Tag berechnen
+            arbeitszeit_summe = timedelta()
+            i = 0
+            while i < len(einträge) - 1:
+                try:
+                    calc = CalculateTime(einträge[i], einträge[i + 1], nutzer)
+                except Exception as e:
+                    logger.error(f"Fehler bei der Arbeitszeitberechnung für {date_obj}: {e}", exc_info=True)
+                    calc = None
+
+                if calc:
+                    try:
+                        calc.gesetzliche_pausen_hinzufügen()
+                        calc.arbeitsfenster_beachten()
+                    except Exception as e:
+                        logger.error(f"Fehler bei Pausen-/Fensterberechnung für {date_obj}: {e}", exc_info=True)
+
+                    arbeitszeit_summe += calc.gearbeitete_zeit
+                    i += 2
+                else:
+                    i += 1
+
+            if nutzer.vertragliche_wochenstunden and nutzer.vertragliche_wochenstunden > 0:
+                tägliche_arbeitszeit = timedelta(hours=(nutzer.vertragliche_wochenstunden / 5))
+                gleitzeit_diff = arbeitszeit_summe - tägliche_arbeitszeit
+            else:
+                tägliche_arbeitszeit = timedelta()
+                gleitzeit_diff = arbeitszeit_summe
+
+            self.gleitzeit_bestimmtes_datum_stunden = round(gleitzeit_diff.total_seconds() / 3600, 2) if einträge else 0.0
             self.zeiteinträge_bestimmtes_datum = einträge_mit_validierung
 
         except SQLAlchemyError as e:
             logger.error(f"DB-Fehler in get_zeiteinträge: {e}", exc_info=True)
             self.zeiteinträge_bestimmtes_datum = []
+            self.gleitzeit_bestimmtes_datum_stunden = 0.0
         except Exception as e:
             logger.error(f"Unerwarteter Fehler in get_zeiteinträge: {e}", exc_info=True)
             self.zeiteinträge_bestimmtes_datum = []
+            self.gleitzeit_bestimmtes_datum_stunden = 0.0
 
     def get_user_info(self):
-        """
-        Lädt alle relevanten Informationen des angemeldeten Nutzers aus der DB.
-        
-        Aktualisiert alle aktueller_nutzer_* Attribute mit den DB-Werten.
-        """
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -587,15 +492,31 @@ class ModellTrackTime():
         except SQLAlchemyError as e:
             logger.error(f"DB-Fehler in get_user_info: {e}", exc_info=True)
 
-    def set_ampel_farbe(self):
+    def update_letzter_login(self):
         """
-        Bestimmt die Ampelfarbe anhand der aktuellen Gleitzeit.
+        Aktualisiert den letzter_login des aktuellen Nutzers auf heute.
+        Wird nach allen Check-Funktionen beim Login aufgerufen.
+        """
+        if self.aktueller_nutzer_id is None:
+            logger.warning("update_letzter_login: Kein Nutzer angemeldet")
+            return
+        if not session:
+            logger.error("update_letzter_login: Keine DB-Session verfügbar")
+            return
         
-        Setzt ampel_status auf:
-        - 'green': Gleitzeit >= ampel_grün
-        - 'yellow': ampel_rot < Gleitzeit < ampel_grün  
-        - 'red': Gleitzeit <= ampel_rot
-        """
+        try:
+            nutzer = session.get(mitarbeiter, self.aktueller_nutzer_id)
+            if nutzer:
+                nutzer.letzter_login = date.today()
+                session.commit()
+                logger.info(f"letzter_login für Nutzer {self.aktueller_nutzer_id} auf {date.today()} aktualisiert")
+            else:
+                logger.error(f"update_letzter_login: Nutzer {self.aktueller_nutzer_id} nicht gefunden")
+        except SQLAlchemyError as e:
+            logger.error(f"DB-Fehler beim Aktualisieren von letzter_login: {e}", exc_info=True)
+            session.rollback()
+
+    def set_ampel_farbe(self):
         try:
             # Sicherstellen, dass Werte nicht None sind
             gleitzeit = float(self.aktueller_nutzer_gleitzeit or 0)
@@ -613,28 +534,135 @@ class ModellTrackTime():
             self.ampel_status = "yellow" # Fallback
 
     def get_messages(self):
-        """Lädt alle Benachrichtigungen des aktuellen Nutzers aus der DB."""
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
         try:
-            stmt = select(Benachrichtigungen).where(Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id)
+            stmt = select(Benachrichtigungen).where(
+                (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Benachrichtigungen.ist_popup == False)
+            )
             result = session.execute(stmt).scalars().all()
             self.benachrichtigungen = result
         except SQLAlchemyError as e:
             logger.error(f"DB-Fehler in get_messages: {e}", exc_info=True)
             self.benachrichtigungen = []
 
+    def get_urlaubstage_monat(self, jahr, monat):
+        """
+        Holt alle Urlaubstage für einen bestimmten Monat und Mitarbeiter.
+        
+        Args:
+            jahr (int): Jahr
+            monat (int): Monat (1-12)
+        
+        Returns:
+            list: Liste von date-Objekten mit Urlaubstagen
+        """
+        if self.aktuelle_kalendereinträge_für_id is None:
+            return []
+        if not session:
+            return []
+
+        try:
+            # Ersten und letzten Tag des Monats berechnen
+            import calendar as cal
+            erster_tag = date(jahr, monat, 1)
+            letzter_tag = date(jahr, monat, cal.monthrange(jahr, monat)[1])
+
+            # Urlaubstage aus der DB holen
+            stmt = select(Abwesenheit.datum).where(
+                (Abwesenheit.mitarbeiter_id == self.aktuelle_kalendereinträge_für_id) &
+                (Abwesenheit.datum >= erster_tag) &
+                (Abwesenheit.datum <= letzter_tag) &
+                (Abwesenheit.typ == "Urlaub")
+            )
+            urlaubstage = session.scalars(stmt).all()
+            self.urlaubstage_aktueller_monat = list(urlaubstage)
+            return list(urlaubstage)
+        
+        except SQLAlchemyError as e:
+            logger.error(f"DB-Fehler in get_urlaubstage_monat: {e}", exc_info=True)
+            self.urlaubstage_aktueller_monat = []
+            return []
+
+    def hat_urlaub_am_datum(self, datum_pruefen: date) -> bool:
+        """Gibt True zurück, wenn für den aktuellen Nutzer am angegebenen Datum ein Urlaubseintrag existiert."""
+        if self.aktueller_nutzer_id is None or not session:
+            return False
+        try:
+            stmt = select(Abwesenheit).where(
+                (Abwesenheit.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Abwesenheit.datum == datum_pruefen) &
+                (Abwesenheit.typ == "Urlaub")
+            )
+            return session.execute(stmt).scalar_one_or_none() is not None
+        except SQLAlchemyError as e:
+            logger.error(f"DB-Fehler in hat_urlaub_am_datum: {e}", exc_info=True)
+            return False
+
+    def loesche_urlaub_am_datum(self, datum_loeschen: date) -> int:
+        """Löscht alle Urlaubseinträge des aktuellen Nutzers an einem Datum. Rückgabe: Anzahl gelöschter Einträge."""
+        if self.aktueller_nutzer_id is None or not session:
+            return 0
+
+        def _db_op():
+            stmt = select(Abwesenheit).where(
+                (Abwesenheit.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Abwesenheit.datum == datum_loeschen) &
+                (Abwesenheit.typ == "Urlaub")
+            )
+            eintraege = session.execute(stmt).scalars().all()
+            count = 0
+            for e in eintraege:
+                session.delete(e)
+                count += 1
+            if count:
+                logger.info(f"{count} Urlaubseintrag/Einträge am {datum_loeschen} gelöscht")
+            return count
+
+        result = self._safe_db_operation(_db_op)
+        return 0 if isinstance(result, dict) and "error" in result else (result or 0)
+
+    def get_krankheitstage_monat(self, jahr, monat):
+        """
+        Holt alle Krankheitstage für einen bestimmten Monat und Mitarbeiter.
+        
+        Args:
+            jahr (int): Jahr
+            monat (int): Monat (1-12)
+        
+        Returns:
+            list: Liste von date-Objekten mit Krankheitstagen
+        """
+        if self.aktuelle_kalendereinträge_für_id is None:
+            return []
+        if not session:
+            return []
+
+        try:
+            # Ersten und letzten Tag des Monats berechnen
+            import calendar as cal
+            erster_tag = date(jahr, monat, 1)
+            letzter_tag = date(jahr, monat, cal.monthrange(jahr, monat)[1])
+
+            # Krankheitstage aus der DB holen
+            stmt = select(Abwesenheit.datum).where(
+                (Abwesenheit.mitarbeiter_id == self.aktuelle_kalendereinträge_für_id) &
+                (Abwesenheit.datum >= erster_tag) &
+                (Abwesenheit.datum <= letzter_tag) &
+                (Abwesenheit.typ == "Krankheit")
+            )
+            krankheitstage = session.scalars(stmt).all()
+            self.krankheitstage_aktueller_monat = list(krankheitstage)
+            return list(krankheitstage)
+        
+        except SQLAlchemyError as e:
+            logger.error(f"DB-Fehler in get_krankheitstage_monat: {e}", exc_info=True)
+            self.krankheitstage_aktueller_monat = []
+            return []
+
     def update_passwort(self):
-        """
-        Ändert das Passwort des aktuellen Nutzers.
-        
-        Validiert:
-        - Passwort nicht leer
-        - Passwort und Wiederholung stimmen überein
-        
-        Setzt feedback_neues_passwort mit Erfolgs- oder Fehlermeldung.
-        """
         # Input-Validierung (ist schon gut)
         if not self.neues_passwort:
             self.feedback_neues_passwort = "Bitte gebe ein passwort ein"
@@ -665,12 +693,6 @@ class ModellTrackTime():
             self.feedback_neues_passwort = "Nutzer nicht gefunden."
 
     def stempel_hinzufügen(self):
-        """
-        Fügt einen neuen Zeitstempel mit aktueller Uhrzeit hinzu (Stempeln).
-        
-        Erstellt einen Zeiteintrag mit aktuellem Datum/Zeit für den
-        angemeldeten Nutzer. Wird für Ein-/Ausstempeln verwendet.
-        """
         # Gekapselte DB-Operation
         def _db_op():
             stempel = Zeiteintrag(
@@ -684,13 +706,147 @@ class ModellTrackTime():
         self._safe_db_operation(_db_op)
         # Feedback wird im Controller gehandhabt
 
-    def get_stamps_for_today(self):
+    def erstelle_popup_warnungen_beim_einstempeln(self):
         """
-        Lädt alle Zeitstempel des heutigen Tages für Timer-Berechnung.
+        Erstellt PopUp-Benachrichtigungen für Arbeitsfenster-Ende und max. Arbeitszeit.
+        Diese werden in der DB gespeichert mit ist_popup=True und der entsprechenden Uhrzeit.
+        """
+        if not self.aktueller_nutzer_id:
+            logger.warning("erstelle_popup_warnungen: Kein Nutzer eingeloggt")
+            return
         
-        Returns:
-            list: Liste von Zeiteintrag-Objekten, chronologisch sortiert
+        try:
+            nutzer = session.get(mitarbeiter, self.aktueller_nutzer_id)
+            if not nutzer:
+                return
+            
+            is_minor = nutzer.is_minor_on_date(date.today())
+            heute = date.today()
+            
+            # 1. Arbeitsfenster-Warnung (Code 9) - 30 Min vor Ende
+            if is_minor:
+                warnung_uhrzeit = time(19, 30)  # 30 Min vor 19:00
+            else:
+                warnung_uhrzeit = time(21, 30)  # 30 Min vor 21:00
+            
+            # Nur erstellen wenn Warnung noch nicht vorbei ist
+            jetzt = datetime.now().time()
+            if warnung_uhrzeit > jetzt:
+                self._add_benachrichtigung_safe(
+                    code=9, 
+                    datum=heute, 
+                    ist_popup=True, 
+                    popup_uhrzeit=warnung_uhrzeit
+                )
+                logger.info(f"Arbeitsfenster-PopUp geplant für {warnung_uhrzeit}")
+            
+            # 2. Max. Arbeitszeit-Warnung (Code 10)
+            # Berechne bereits gearbeitete Zeit heute
+            today_stamps = self.get_stamps_for_today()
+            gearbeitete_zeit = timedelta()
+            
+            if len(today_stamps) > 1:
+                # Paarweise Berechnung (alle außer dem letzten Stempel)
+                i = 0
+                while i < len(today_stamps) - 2:
+                    calc = CalculateTime(today_stamps[i], today_stamps[i+1], nutzer)
+                    if calc:
+                        gearbeitete_zeit += calc.gearbeitete_zeit
+                        i += 2
+                    else:
+                        i += 1
+            
+            # Maximale Arbeitszeit (30 Min vorher warnen)
+            if is_minor:
+                max_arbeitszeit = timedelta(hours=9) #ohne Pausen, nur eingestempelte Zeit
+            else:
+                max_arbeitszeit = timedelta(hours=10, minutes= 45) #ohne Pausen, nur eingestempelte Zeit
+            
+            warnung_arbeitszeit = max_arbeitszeit - timedelta(minutes=30)
+            verbleibende_arbeitszeit = warnung_arbeitszeit - gearbeitete_zeit
+            
+            if verbleibende_arbeitszeit > timedelta(0):
+                # Letzten Stempel-Zeit holen
+                letzter_stempel = today_stamps[-1].zeit
+                start_dt = datetime.combine(heute, letzter_stempel)
+                warnung_dt = start_dt + verbleibende_arbeitszeit
+                
+                # Nur wenn Warnung heute ist und noch nicht vorbei
+                if warnung_dt.date() == heute and warnung_dt.time() > jetzt:
+                    self._add_benachrichtigung_safe(
+                        code=10,
+                        datum=heute,
+                        ist_popup=True,
+                        popup_uhrzeit=warnung_dt.time()
+                    )
+                    logger.info(f"Max. Arbeitszeit-PopUp geplant für {warnung_dt.time()}")
+            
+        except Exception as e:
+            logger.error(f"Fehler beim Erstellen der PopUp-Warnungen: {e}", exc_info=True)
+
+    def get_pending_popups_for_today(self):
         """
+        Holt alle noch ausstehenden PopUp-Benachrichtigungen für heute.
+        Gibt Liste von (code, uhrzeit) Tupeln zurück.
+        """
+        if not self.aktueller_nutzer_id:
+            return []
+        if not session:
+            return []
+        
+        try:
+            heute = date.today()
+            jetzt = datetime.now().time()
+            
+            stmt = select(Benachrichtigungen).where(
+                (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Benachrichtigungen.datum == heute) &
+                (Benachrichtigungen.ist_popup == True) &
+                (Benachrichtigungen.popup_uhrzeit != None)
+            )
+            popups = session.scalars(stmt).all()
+            
+            # Nur zukünftige PopUps zurückgeben
+            pending = [(p.benachrichtigungs_code, p.popup_uhrzeit, p.id) for p in popups if p.popup_uhrzeit > jetzt]
+            logger.debug(f"Gefundene ausstehende PopUps: {len(pending)}")
+            return pending
+            
+        except SQLAlchemyError as e:
+            logger.error(f"Fehler beim Laden der PopUps: {e}", exc_info=True)
+            return []
+
+    def delete_popup_benachrichtigung(self, benachrichtigung_id):
+        """Löscht eine PopUp-Benachrichtigung nach Anzeige."""
+        def _db_op():
+            benachrichtigung = session.get(Benachrichtigungen, benachrichtigung_id)
+            if benachrichtigung and benachrichtigung.ist_popup:
+                session.delete(benachrichtigung)
+                return True
+            return False
+        
+        return self._safe_db_operation(_db_op)
+
+    def delete_all_popup_benachrichtigungen_for_today(self):
+        """Löscht alle PopUp-Benachrichtigungen für heute beim Ausstempeln."""
+        def _db_op():
+            heute = date.today()
+            stmt = select(Benachrichtigungen).where(
+                (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Benachrichtigungen.datum == heute) &
+                (Benachrichtigungen.ist_popup == True)
+            )
+            popups = session.scalars(stmt).all()
+            count = len(popups)
+            
+            for popup in popups:
+                session.delete(popup)
+            
+            logger.info(f"{count} PopUp-Benachrichtigungen für heute gelöscht")
+            return count
+        
+        return self._safe_db_operation(_db_op)
+
+    def get_stamps_for_today(self):
         if not self.aktueller_nutzer_id: return []
         if not session: return []
 
@@ -753,6 +909,12 @@ class ModellTrackTime():
             self.feedback_manueller_stempel = "Fehler beim Prüfen vorhandener Stempel."
             return
 
+        # Einträge für den Tag zurücksetzen (unvalidieren und Gleitzeit rückgängig machen)
+
+        self.set_entries_unvalidated_and_revert_gleitzeit(self.nachtragen_datum)
+        logger.info(f"Einträge für {self.nachtragen_datum} wurden zurückgesetzt vor manuellem Stempel.")
+
+
         # Gekapselte DB-Operation zum Hinzufügen
         def _db_op():
             stempel = Zeiteintrag(
@@ -769,6 +931,132 @@ class ModellTrackTime():
             self.feedback_manueller_stempel = "Fehler beim Speichern des Stempels."
         else:
             self.feedback_manueller_stempel = f"Stempel am {self.nachtragen_datum} um {self.manueller_stempel_uhrzeit} erfolgreich hinzugefügt"
+            
+            # Wenn der nachgetragene Stempel für heute ist und der Nutzer eingestempelt ist, PopUps erstellen
+            if stempel_datum == date.today():
+                today_stamps = self.get_stamps_for_today()
+                is_clocked_in = len(today_stamps) % 2 != 0
+                
+                if is_clocked_in:
+                    logger.info("Nachgetragener Stempel für heute - erstelle PopUp-Warnungen")
+                    self.erstelle_popup_warnungen_beim_einstempeln()
+
+
+    def set_entries_unvalidated_and_revert_gleitzeit(self, datum_str):
+        """
+        Setzt alle Zeiteinträge für ein bestimmtes Datum auf unvalidiert und macht die Gleitzeitberechnung für diesen Tag rückgängig.
+        datum_str: Datum als String im Format '%d/%m/%Y'
+        """
+        if self.aktueller_nutzer_id is None:
+            return
+        logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: starte für Nutzer {self.aktueller_nutzer_id} und Datum-String '{datum_str}'")
+        try:
+            datum = datetime.strptime(datum_str, "%d/%m/%Y").date()
+        except ValueError:
+            logger.warning(f"set_entries_unvalidated_and_revert_gleitzeit: Ungültiges Datumsformat '{datum_str}', erwartet '%d/%m/%Y'")
+            return
+
+        # Zeiteinträge für das Datum holen (zeitlich sortiert)
+        stmt = select(Zeiteintrag).where(
+            (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+            (Zeiteintrag.datum == datum)
+        ).order_by(Zeiteintrag.zeit)
+        eintraege = session.scalars(stmt).all()
+        logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: {len(eintraege)} Zeiteinträge für {datum} gefunden")
+
+        # Nur dann Gleitzeit rückgängig machen, wenn dieser Tag bereits in die Gleitzeit eingerechnet wurde
+        validated_before = [e for e in eintraege if getattr(e, 'validiert', False)]
+        logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: {len(validated_before)} zuvor validierte Einträge für {datum}")
+
+        # Prüfen ob für diesen Tag eine Benachrichtigung (Code 1 - fehlender Stempel) existiert
+        # Wenn ja, wurde bereits Gleitzeit abgezogen und darf nicht nochmal abgezogen werden
+        benachrichtigung_stmt = select(Benachrichtigungen).where(
+            (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
+            (Benachrichtigungen.datum == datum) &
+            (Benachrichtigungen.benachrichtigungs_code == 1)
+        )
+        hat_fehlstempel_benachrichtigung = session.execute(benachrichtigung_stmt).scalar_one_or_none()
+        
+        if hat_fehlstempel_benachrichtigung:
+            logger.info(f"set_entries_unvalidated_and_revert_gleitzeit: Fehlstempel-Benachrichtigung für {datum} gefunden.")
+        
+        # Gleitzeit für diesen Tag berechnen und abziehen
+        nutzer = session.get(mitarbeiter, self.aktueller_nutzer_id)
+        if not nutzer:
+            logger.error(f"set_entries_unvalidated_and_revert_gleitzeit: Nutzer {self.aktueller_nutzer_id} nicht gefunden")
+            return
+
+        # Letzter Login auf das zu bearbeitende Datum setzen
+        nutzer.letzter_login = datum
+        logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: letzter_login auf {datum} gesetzt")
+
+        # Arbeitszeit für diesen Tag berechnen (nur aus zuvor validierten Paaren)
+        arbeitstag = timedelta()
+        if validated_before:
+            i = 0
+            while i < len(validated_before) - 1:
+                calc = CalculateTime(validated_before[i], validated_before[i+1], nutzer)
+                if calc:
+                    # Debug: Arbeitszeit vor Pausen
+                    zeit_vor_pausen = calc.gearbeitete_zeit
+                    logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: Paar {i//2+1}: {validated_before[i].zeit} - {validated_before[i+1].zeit}, Brutto: {zeit_vor_pausen}")
+                    
+                    calc.gesetzliche_pausen_hinzufügen()
+                    zeit_nach_pausen = calc.gearbeitete_zeit
+                    logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: Nach Pausen: {zeit_nach_pausen}, Pausenabzug: {zeit_vor_pausen - zeit_nach_pausen}")
+                    
+                    calc.arbeitsfenster_beachten()
+                    zeit_nach_fenster = calc.gearbeitete_zeit
+                    logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: Nach Arbeitsfenster: {zeit_nach_fenster}, Fensterabzug: {zeit_nach_pausen - zeit_nach_fenster}")
+                    
+                    arbeitstag += calc.gearbeitete_zeit
+                    i += 2
+                else:
+                    i += 1
+        logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: gearbeitete (zuvor angerechnete) Zeit am {datum}: {arbeitstag}")
+
+        # Vertragliche tägliche Arbeitszeit
+        taegliche_arbeitszeit = timedelta(hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
+        
+        # Fall 1: Validierte Einträge existieren UND keine Fehlstempel-Benachrichtigung
+        # -> Gleitzeit aus validierten Einträgen zurückrechnen
+        if validated_before and not hat_fehlstempel_benachrichtigung:
+            gleitzeit_diff = arbeitstag - taegliche_arbeitszeit
+            gleitzeit_stunden = float(gleitzeit_diff.total_seconds() / 3600)
+            logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: tägliche Sollzeit: {taegliche_arbeitszeit}, Differenz: {gleitzeit_diff} ({gleitzeit_stunden:.2f}h)")
+
+            alte_gleitzeit = float(self.aktueller_nutzer_gleitzeit or 0)
+            self.aktueller_nutzer_gleitzeit = alte_gleitzeit - gleitzeit_stunden
+            nutzer.gleitzeit = self.aktueller_nutzer_gleitzeit
+            logger.info(f"set_entries_unvalidated_and_revert_gleitzeit: Gleitzeit aus validierten Einträgen zurückgesetzt von {alte_gleitzeit:.2f}h auf {self.aktueller_nutzer_gleitzeit:.2f}h für {datum}")
+        
+        # Fall 2: Fehlstempel-Benachrichtigung existiert (egal ob validierte Einträge vorhanden)
+        # -> Die tägliche Sollzeit wurde bereits abgezogen, jetzt wieder hinzufügen
+        elif hat_fehlstempel_benachrichtigung:
+            gleitzeit_stunden = float(taegliche_arbeitszeit.total_seconds() / 3600)
+            alte_gleitzeit = float(self.aktueller_nutzer_gleitzeit or 0)
+            self.aktueller_nutzer_gleitzeit = alte_gleitzeit + gleitzeit_stunden  # HINZUFÜGEN!
+            nutzer.gleitzeit = self.aktueller_nutzer_gleitzeit
+            logger.info(f"set_entries_unvalidated_and_revert_gleitzeit: Fehlstempel-Abzug rückgängig gemacht: {alte_gleitzeit:.2f}h + {gleitzeit_stunden:.2f}h = {self.aktueller_nutzer_gleitzeit:.2f}h für {datum}")
+            
+            # Benachrichtigung löschen, da jetzt Stempel vorhanden
+            try:
+                session.delete(hat_fehlstempel_benachrichtigung)
+                logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: Fehlstempel-Benachrichtigung für {datum} gelöscht")
+            except SQLAlchemyError as e:
+                logger.error(f"Fehler beim Löschen der Benachrichtigung: {e}")
+        
+        # Fall 3: Keine validierten Einträge und keine Benachrichtigung
+        # -> Nichts zu tun
+        else:
+            logger.info(f"set_entries_unvalidated_and_revert_gleitzeit: Keine Gleitzeit-Anpassung nötig für {datum}")
+
+        # Alle Einträge (auch unvalidierte) auf unvalidiert setzen und speichern
+        for e in eintraege:
+            e.validiert = False
+        session.commit()
+        logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: Alle Einträge für {datum} auf unvalidiert gesetzt und gespeichert")
+
 
     def urlaub_eintragen(self):
         if (self.nachtragen_datum is None) or (self.neuer_abwesenheitseintrag_art is None):
@@ -786,6 +1074,23 @@ class ModellTrackTime():
 
         # Gekapselte DB-Operation
         def _db_op():
+            # Prüfen, ob an dem Tag schon Stempel existieren
+            stamp_stmt = select(Zeiteintrag).where(
+                (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Zeiteintrag.datum == abwesenheit_datum)
+            )
+            if session.execute(stamp_stmt).scalar_one_or_none():
+                return {"error": "An diesem Tag ist bereits ein Zeitstempel vorhanden. Bitte löschen Sie diesen zuerst."}
+
+            # Prüfen, ob bereits eine Abwesenheit existiert
+            abwesend_stmt = select(Abwesenheit).where(
+                (Abwesenheit.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Abwesenheit.datum == abwesenheit_datum)
+            )
+            exist_abw = session.execute(abwesend_stmt).scalar_one_or_none()
+            if exist_abw:
+                return {"error": f"An diesem Tag ist bereits '{exist_abw.typ}' eingetragen."}
+            
             neue_abwesenheit = Abwesenheit(
                 mitarbeiter_id = self.aktueller_nutzer_id,
                 datum = abwesenheit_datum,
@@ -794,51 +1099,176 @@ class ModellTrackTime():
             session.add(neue_abwesenheit)
             return True
 
-        self._safe_db_operation(_db_op)
-        # Feedback sollte im Controller gesetzt werden
+        result = self._safe_db_operation(_db_op)
+        
+        # Feedback als String setzen
+        if isinstance(result, dict) and "error" in result:
+            self.feedback_manueller_stempel = result["error"]
+        elif result is True:
+            typ_text = "Urlaub" if self.neuer_abwesenheitseintrag_art == "Urlaub" else "Krankheit"
+            self.feedback_manueller_stempel = f"{typ_text} am {self.nachtragen_datum} erfolgreich eingetragen"
+        else:
+            self.feedback_manueller_stempel = "Fehler beim Eintragen der Abwesenheit."
 
-    # --- Alle 'checke_...' Methoden ---
-    # Diese Methoden sind komplex und führen viele DB-Operationen aus.
-    # Sie sollten alle in einen try-except-Block gehüllt werden,
-    # um die Stabilität des Login-Prozesses zu gewährleisten.
-    # Fehler bei der Benachrichtigungserstellung (z.B. IntegrityError)
-    # werden bereits in _safe_db_operation behandelt.
 
-    def _add_benachrichtigung_safe(self, code, datum):
-        """Sicheres Hinzufügen einer Benachrichtigung, fängt IntegrityError ab."""
+    def stempel_bearbeiten_nach_id(self, stempel_id, neue_uhrzeit):
+        """
+        Bearbeitet die Uhrzeit eines Stempels mit der gegebenen ID.
+        
+        Args:
+            stempel_id: Die ID des zu bearbeitenden Zeiteintrags
+            neue_uhrzeit: Die neue Uhrzeit als time-Objekt
+        
+        Returns:
+            True bei Erfolg, False bei Fehler
+        """
+        if self.aktueller_nutzer_id is None:
+            logger.warning("stempel_bearbeiten_nach_id: Kein Nutzer eingeloggt")
+            return False
+        
+        if not session:
+            logger.error("stempel_bearbeiten_nach_id: Keine Datenbankverbindung")
+            return False
+        
+        try:
+            # Stempel laden
+            eintrag = session.get(Zeiteintrag, stempel_id)
+            if not eintrag:
+                logger.warning(f"stempel_bearbeiten_nach_id: Stempel mit ID {stempel_id} nicht gefunden")
+                return False
+            
+            # Prüfen, ob der Stempel dem aktuellen Nutzer gehört
+            if eintrag.mitarbeiter_id != self.aktueller_nutzer_id:
+                logger.warning(f"stempel_bearbeiten_nach_id: Stempel {stempel_id} gehört nicht dem aktuellen Nutzer")
+                return False
+            
+            # Datum des Stempels für die Rücksetzung merken
+            datum_des_stempels = eintrag.datum
+            datum_str = datum_des_stempels.strftime("%d/%m/%Y")
+            
+            logger.info(f"stempel_bearbeiten_nach_id: Bearbeite Stempel {stempel_id} vom {datum_str}: {eintrag.zeit} -> {neue_uhrzeit}")
+            
+            # Schritt 1: Tag zurücksetzen (Gleitzeit rückgängig machen, alle Einträge unvalidiert setzen)
+            # WICHTIG: Dies muss VOR der Änderung erfolgen, damit die ALTE Zeit für die Rückrechnung verwendet wird
+            self.set_entries_unvalidated_and_revert_gleitzeit(datum_str)
+            
+            # Schritt 2: Neue Uhrzeit setzen
+            eintrag.zeit = neue_uhrzeit
+            session.commit()
+            logger.debug(f"stempel_bearbeiten_nach_id: Neue Uhrzeit {neue_uhrzeit} für Stempel {stempel_id} gespeichert")
+            
+            # Schritt 3: Gleitzeit neu berechnen (verwendet bestehende berechne_gleitzeit Methode)
+            self.berechne_gleitzeit()
+            
+            logger.info(f"stempel_bearbeiten_nach_id: Stempel {stempel_id} erfolgreich bearbeitet, Gleitzeit neu berechnet")
+            return True
+            
+        except SQLAlchemyError as e:
+            logger.error(f"stempel_bearbeiten_nach_id: Datenbankfehler: {e}", exc_info=True)
+            session.rollback()
+            return False
+        except Exception as e:
+            logger.error(f"stempel_bearbeiten_nach_id: Unerwarteter Fehler: {e}", exc_info=True)
+            session.rollback()
+            return False
+
+
+    def stempel_löschen_nach_id(self, stempel_id):
+        """
+        Löscht einen Stempel mit der gegebenen ID.
+        
+        Args:
+            stempel_id: Die ID des zu löschenden Zeiteintrags
+        
+        Returns:
+            True bei Erfolg, False bei Fehler
+        """
+        if self.aktueller_nutzer_id is None:
+            logger.warning("stempel_löschen_nach_id: Kein Nutzer eingeloggt")
+            return False
+        
+        if not session:
+            logger.error("stempel_löschen_nach_id: Keine Datenbankverbindung")
+            return False
+        
+        try:
+            # Stempel laden
+            eintrag = session.get(Zeiteintrag, stempel_id)
+            if not eintrag:
+                logger.warning(f"stempel_löschen_nach_id: Stempel mit ID {stempel_id} nicht gefunden")
+                return False
+            
+            # Prüfen, ob der Stempel dem aktuellen Nutzer gehört
+            if eintrag.mitarbeiter_id != self.aktueller_nutzer_id:
+                logger.warning(f"stempel_löschen_nach_id: Stempel {stempel_id} gehört nicht dem aktuellen Nutzer")
+                return False
+            
+            # Datum des Stempels für die Rücksetzung merken
+            datum_des_stempels = eintrag.datum
+            datum_str = datum_des_stempels.strftime("%d/%m/%Y")
+            
+            logger.info(f"stempel_löschen_nach_id: Lösche Stempel {stempel_id} vom {datum_str}, Uhrzeit: {eintrag.zeit}")
+            self.set_entries_unvalidated_and_revert_gleitzeit(datum_str)
+            # Schritt 1: Stempel löschen
+            session.delete(eintrag)
+            session.commit()
+            logger.debug(f"stempel_löschen_nach_id: Stempel {stempel_id} aus Datenbank gelöscht")
+            
+
+            
+            
+            # Schritt 3: checke_stempel ausführen (prüft fehlende/ungerade Stempel und erstellt ggf. Benachrichtigungen)
+            # WICHTIG: Dies muss VOR berechne_gleitzeit() aufgerufen werden, da berechne_gleitzeit() auf diese Benachrichtigungen prüft
+            self.checke_stempel()
+            
+            # Schritt 4: Gleitzeit neu berechnen (verwendet bestehende berechne_gleitzeit Methode)
+            # Dies wird alle unvalidierten Einträge verarbeiten und prüft auf Benachrichtigungen (Code 1)
+            self.berechne_gleitzeit()
+            
+            logger.info(f"stempel_löschen_nach_id: Stempel {stempel_id} erfolgreich gelöscht, Gleitzeit und Stempel neu geprüft")
+            return True
+            
+        except SQLAlchemyError as e:
+            logger.error(f"stempel_löschen_nach_id: Datenbankfehler: {e}", exc_info=True)
+            session.rollback()
+            return False
+        except Exception as e:
+            logger.error(f"stempel_löschen_nach_id: Unerwarteter Fehler: {e}", exc_info=True)
+            session.rollback()
+            return False
+
+
+    def _add_benachrichtigung_safe(self, code, datum, ist_popup=False, popup_uhrzeit=None):
+        """Sicheres Hinzufügen einer Benachrichtigung, prüft vorher ob sie bereits existiert."""
         def _db_op():
+            # Prüfen, ob Benachrichtigung bereits existiert
+            exists_stmt = select(Benachrichtigungen).where(
+                (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Benachrichtigungen.benachrichtigungs_code == code) &
+                (Benachrichtigungen.datum == datum)
+            )
+            exists = session.execute(exists_stmt).scalar_one_or_none()
+            
+            if exists:
+                logger.debug(f"Benachrichtigung (Code {code}, Datum {datum}) existiert bereits. Übersprungen.")
+                return False  # Keine neue Benachrichtigung erstellt
+            
+            # Benachrichtigung erstellen
             benachrichtigung = Benachrichtigungen(
                 mitarbeiter_id=self.aktueller_nutzer_id,
                 benachrichtigungs_code=code,
-                datum=datum
+                datum=datum,
+                ist_popup=ist_popup,
+                popup_uhrzeit=popup_uhrzeit
             )
             session.add(benachrichtigung)
             return True
         
         result = self._safe_db_operation(_db_op)
-        if isinstance(result, dict) and result.get("error") == "IntegrityError":
-            logger.debug(f"Benachrichtigung (Code {code}, Datum {datum}) existiert bereits. Übersprungen.")
-        elif isinstance(result, dict):
+        if isinstance(result, dict) and "error" in result:
             logger.error(f"Konnte Benachrichtigung (Code {code}) nicht hinzufügen: {result.get('details')}")
 
-    # ===================================================================
-    # ArbZG / JArbSchG Validierungsmethoden
-    # ===================================================================
-    # Die folgenden Methoden prüfen die Einhaltung des Arbeitszeitgesetzes (ArbZG)
-    # und des Jugendarbeitsschutzgesetzes (JArbSchG).
-    # 
-    # Sie werden nach dem Login aufgerufen und erstellen Benachrichtigungen bei Verstößen.
-    # Alle Methoden verwenden _add_benachrichtigung_safe() um Duplikate zu vermeiden.
-    # ===================================================================
-
     def checke_wochenstunden_minderjaehrige(self):
-        """
-        Prüft 40-Stunden-Woche für Minderjährige (JArbSchG §8).
-        
-        Iteriert über alle Wochen seit letztem Login und prüft ob
-        die Wochenarbeitszeit 40 Stunden überschreitet.
-        Erstellt Benachrichtigung (Code 7) bei Verstoß.
-        """
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -890,12 +1320,6 @@ class ModellTrackTime():
 
 
     def checke_arbeitstage_pro_woche_minderjaehrige(self):
-        """
-        Prüft 5-Tage-Woche für Minderjährige (JArbSchG §15).
-        
-        Prüft ob in einer Woche an mehr als 5 Tagen gearbeitet wurde.
-        Erstellt Benachrichtigung (Code 8) bei Verstoß.
-        """
         if self.aktueller_nutzer_id is None: return
         if not session: return
 
@@ -936,20 +1360,15 @@ class ModellTrackTime():
 
 
     def checke_arbeitstage(self):
-        """
-        Prüft ob an allen Werktagen seit letztem Login gestempelt wurde.
-        
-        Für jeden Werktag (Mo-Fr) ohne Stempel:
-        - Prüft auf Abwesenheit (Urlaub/Krankheit)
-        - Zieht tägliche Arbeitszeit von Gleitzeit ab
-        - Erstellt Benachrichtigung (Code 1)
-        
-        Returns:
-            list: Liste der fehlenden Tage (ohne Abwesenheiten)
-        """
-        if self.aktueller_nutzer_id is None: return
-        if not session: return
+        if self.aktueller_nutzer_id is None: 
+            logger.debug("checke_arbeitstage: aktueller_nutzer_id ist None")
+            return
+        if not session: 
+            logger.debug("checke_arbeitstage: session ist nicht verfügbar")
+            return
 
+        logger.info(f"checke_arbeitstage: Starte für Nutzer {self.aktueller_nutzer_id}")
+        
         try:
             nutzer = session.get(mitarbeiter, self.aktueller_nutzer_id)
             if not nutzer:
@@ -958,6 +1377,7 @@ class ModellTrackTime():
 
             letzter_login = nutzer.letzter_login
             gestern = date.today() - timedelta(days=1)
+            logger.debug(f"checke_arbeitstage: Prüfe Zeitraum von {letzter_login} bis {gestern}")
 
             fehlende_tage = []
             tag = letzter_login
@@ -970,7 +1390,10 @@ class ModellTrackTime():
                     eintrag = session.execute(stmt).scalars().first()
                     if not eintrag:
                         fehlende_tage.append(tag)
+                        logger.debug(f"checke_arbeitstage: Kein Eintrag für {tag}")
                 tag += timedelta(days=1)
+
+            logger.info(f"checke_arbeitstage: {len(fehlende_tage)} fehlende Arbeitstage gefunden: {fehlende_tage}")
 
             # Validierung der Division
             if not self.aktueller_nutzer_vertragliche_wochenstunden or self.aktueller_nutzer_vertragliche_wochenstunden < 0:
@@ -978,6 +1401,8 @@ class ModellTrackTime():
                 tägliche_arbeitszeit = timedelta(hours=8) # Fallback auf 8h
             else:
                 tägliche_arbeitszeit = timedelta(hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
+
+            logger.debug(f"checke_arbeitstage: Tägliche Arbeitszeit berechnet: {tägliche_arbeitszeit}")
 
             abgezogene_tage = []
             for tag in fehlende_tage:
@@ -989,6 +1414,7 @@ class ModellTrackTime():
                 exist_urlaub = session.execute(urlaubs_stmt).scalar_one_or_none()
 
                 if not exist_urlaub:
+                    logger.debug(f"checke_arbeitstage: Keine Abwesenheit für {tag}, ziehe Gleitzeit ab")
                     # Gekapselte Operation für Gleitzeit-Update UND Benachrichtigung
                     def _db_op():
                         # Prüfen, ob Benachrichtigung schon existiert (Atomarität)
@@ -1001,9 +1427,12 @@ class ModellTrackTime():
                         
                         if not exists:
                             # Gleitzeit abziehen
-                            neue_gleitzeit = float(self.aktueller_nutzer_gleitzeit) - (tägliche_arbeitszeit.total_seconds() / 3600)
+                            alte_gleitzeit = float(self.aktueller_nutzer_gleitzeit)
+                            neue_gleitzeit = alte_gleitzeit - (tägliche_arbeitszeit.total_seconds() / 3600)
                             nutzer.gleitzeit = neue_gleitzeit # Aktualisiert das Objekt in der Session
                             self.aktueller_nutzer_gleitzeit = neue_gleitzeit # Aktualisiert den lokalen Cache
+                            
+                            logger.debug(f"checke_arbeitstage: Gleitzeit für {tag} angepasst: {alte_gleitzeit} -> {neue_gleitzeit}")
 
                             # Benachrichtigung erstellen
                             benachrichtigung = Benachrichtigungen(
@@ -1013,10 +1442,16 @@ class ModellTrackTime():
                             )
                             session.add(benachrichtigung)
                             abgezogene_tage.append(tag)
+                            logger.debug(f"checke_arbeitstage: Benachrichtigung für {tag} erstellt")
+                        else:
+                            logger.debug(f"checke_arbeitstage: Benachrichtigung für {tag} existiert bereits")
                         return True
 
                     self._safe_db_operation(_db_op)
+                else:
+                    logger.debug(f"checke_arbeitstage: Abwesenheit ({exist_urlaub.typ}) für {tag} gefunden, keine Gleitzeit-Anpassung")
             
+            logger.info(f"checke_arbeitstage: Abgeschlossen. {len(abgezogene_tage)} Tage mit Gleitzeit-Abzug: {abgezogene_tage}")
             return fehlende_tage
         
         except SQLAlchemyError as e:
@@ -1025,15 +1460,24 @@ class ModellTrackTime():
 
 
     def checke_stempel(self):
-        if self.aktueller_nutzer_id is None: return
-        if not session: return
+        if self.aktueller_nutzer_id is None: 
+            logger.debug("checke_stempel: aktueller_nutzer_id ist None")
+            return
+        if not session: 
+            logger.debug("checke_stempel: session ist nicht verfügbar")
+            return
+
+        logger.info(f"checke_stempel: Starte für Nutzer {self.aktueller_nutzer_id}")
 
         try:
             nutzer = session.get(mitarbeiter, self.aktueller_nutzer_id)
-            if not nutzer: return
+            if not nutzer: 
+                logger.error(f"checke_stempel: Nutzer {self.aktueller_nutzer_id} nicht gefunden")
+                return
 
             letzter_login = nutzer.letzter_login
             gestern = date.today() - timedelta(days=1)
+            logger.debug(f"checke_stempel: Prüfe Zeitraum von {letzter_login} bis {gestern}")
 
             ungerade_tage = []
             tag = letzter_login
@@ -1043,16 +1487,25 @@ class ModellTrackTime():
                         (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
                         (Zeiteintrag.datum == tag)
                     )
-                    stempel_anzahl = len(session.execute(stmt).scalars().all())
+                    stempel = session.execute(stmt).scalars().all()
+                    stempel_anzahl = len(stempel)
+                    
                     if stempel_anzahl % 2 != 0:
                         ungerade_tage.append(tag)
+                        logger.debug(f"checke_stempel: Ungerade Stempelanzahl ({stempel_anzahl}) für {tag}")
+                    else:
+                        logger.debug(f"checke_stempel: Gerade Stempelanzahl ({stempel_anzahl}) für {tag}")
                 tag += timedelta(days=1)
+
+            logger.info(f"checke_stempel: {len(ungerade_tage)} Tage mit ungerader Stempelanzahl gefunden: {ungerade_tage}")
 
             self.feedback_stempel = f"An den Tagen {ungerade_tage} fehlt ein Stempel, bitte tragen sie diesen nach"
 
             for tag in ungerade_tage:
+                logger.debug(f"checke_stempel: Erstelle Benachrichtigung für {tag}")
                 self._add_benachrichtigung_safe(code=2, datum=tag)
 
+            logger.info(f"checke_stempel: Abgeschlossen. Benachrichtigungen für {len(ungerade_tage)} Tage erstellt")
             return ungerade_tage
         
         except SQLAlchemyError as e:
@@ -1274,8 +1727,7 @@ class ModellTrackTime():
 
             stmt = select(Zeiteintrag).where(
                 (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
-                (Zeiteintrag.validiert == 0) &
-                (Zeiteintrag.datum <= date.today() - timedelta(days=1))
+                (Zeiteintrag.validiert == 0)
             ).order_by(Zeiteintrag.datum, Zeiteintrag.zeit)
             einträge = session.scalars(stmt).all()
             
@@ -1319,18 +1771,33 @@ class ModellTrackTime():
                     (Benachrichtigungen.benachrichtigungs_code == 1)
                 )
                 exists = session.execute(exists_stmt).scalar_one_or_none()
-                
-                # Hier ist ein Bug in der Original-Logik:
-                # 'unvalidierte' prüft auf 'validiert == 1', aber wir verarbeiten 'validiert == 0'.
-                # Die Prüfung 'if (not exists) and (not unvalidierte):' ist sinnlos.
-                # Ich nehme an, die Prüfung auf 'exists' (Code 1) ist die relevante.
-            
-                if not exists: 
-                    # Nur Tage berechnen, für die *nicht* schon Gleitzeit abgezogen wurde
+
+                if exists:
+                    # Es existiert bereits eine Code-1-Benachrichtigung (tägliche Sollzeit wurde früher abgezogen).
+                    # Wenn jetzt Stempel vorhanden sind (arbeitszeit > 0), dann darf der Tag NICHT übersprungen werden.
+                    # Stattdessen fügen wir nur die tatsächlich gearbeitete Zeit hinzu, ohne die tägliche Sollzeit erneut abzuziehen.
+                    gleitzeit_diff_total += arbeitszeit
+                    logger.debug(
+                        f"Tag {datum}: Code 1 existiert – füge nur Arbeitszeit {arbeitszeit} hinzu (Sollzeit nicht erneut abziehen)."
+                    )
+                    continue
+
+                # NEU: Wenn für diesen Tag bereits validierte Einträge existieren,
+                # dann den Tages-Soll NICHT erneut abziehen, sondern nur die zusätzliche Arbeitszeit addieren.
+                validated_before_stmt = select(Zeiteintrag).where(
+                    (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+                    (Zeiteintrag.datum == datum) &
+                    (Zeiteintrag.validiert == 1)
+                )
+                validated_before = session.execute(validated_before_stmt).first() is not None
+
+                if validated_before:
+                    gleitzeit_diff_total += arbeitszeit
+                    logger.debug(f"Tag {datum}: Bereits validierte Einträge vorhanden – füge nur zusätzliche Arbeitszeit {arbeitszeit} hinzu.")
+                else:
                     differenz = arbeitszeit - tägliche_arbeitszeit
                     gleitzeit_diff_total += differenz
-                else:
-                    logger.debug(f"Gleitzeit für {datum} übersprungen (Code 1 Benachrichtigung existiert).")
+                    logger.debug(f"Tag {datum}: Erster Lauf – füge Differenz {differenz} (Arbeitszeit {arbeitszeit} - Soll {tägliche_arbeitszeit}) hinzu.")
             
             # Alle benutzten Einträge als validiert markieren
             for e in benutzte_einträge:
@@ -1338,8 +1805,11 @@ class ModellTrackTime():
             
             # Gleitzeit-Update
             gleitzeit_stunden = float(gleitzeit_diff_total.total_seconds() / 3600)
-            neue_gleitzeit = float(self.aktueller_nutzer_gleitzeit or 0) + gleitzeit_stunden
-            
+            # WICHTIG: Auf DB-Wert des Nutzers aufsetzen (robust gegen externe Änderungen), nicht auf evtl. veralteten Cache im Modell
+            aktuelle_db_gleitzeit = float(nutzer.gleitzeit or 0)
+            neue_gleitzeit = aktuelle_db_gleitzeit + gleitzeit_stunden
+
+            # Werte synchron halten
             self.aktueller_nutzer_gleitzeit = neue_gleitzeit
             nutzer.gleitzeit = neue_gleitzeit
             
@@ -1413,15 +1883,22 @@ class ModellTrackTime():
                     berücksichtigte_tage.append(tag)
                 
             if not gleitzeit_differenzen:
-                return {"durchschnitt_gleitzeit_stunden": 0.0, "anzahl_tage": 0, "berücksichtigte_tage": []}
+                return {
+                    "durchschnitt_gleitzeit_stunden": 0.0,
+                    "gesamt_gleitzeit_stunden": 0.0,
+                    "anzahl_tage": 0,
+                    "berücksichtigte_tage": []
+                }
 
             # Division durch Null ist hier (len(gleitzeit_differenzen)) abgefangen
             gesamt_gleitzeit = sum(gleitzeit_differenzen, timedelta())
             durchschnitt = gesamt_gleitzeit / len(gleitzeit_differenzen)
             durchschnitt_stunden = round(durchschnitt.total_seconds() / 3600, 2)
+            gesamt_stunden = gesamt_gleitzeit.total_seconds() / 3600
 
             return {
                 "durchschnitt_gleitzeit_stunden": durchschnitt_stunden,
+                "gesamt_gleitzeit_stunden": gesamt_stunden,
                 "anzahl_tage": len(gleitzeit_differenzen),
                 "berücksichtigte_tage": berücksichtigte_tage
             }
@@ -1432,7 +1909,12 @@ class ModellTrackTime():
             return {"error": "DB-Fehler"}
         except ZeroDivisionError:
              logger.error("berechne_durchschnittliche_gleitzeit: Division durch Null (sollte abgefangen sein).")
-             return {"durchschnitt_gleitzeit_stunden": 0.0, "anzahl_tage": 0, "berücksichtigte_tage": []}
+             return {
+                 "durchschnitt_gleitzeit_stunden": 0.0,
+                 "gesamt_gleitzeit_stunden": 0.0,
+                 "anzahl_tage": 0,
+                 "berücksichtigte_tage": []
+             }
 
 
     
@@ -1451,7 +1933,11 @@ class ModellTrackTime():
         start_monat = heute.replace(day=1)
         ergebnis_monat = self.berechne_durchschnittliche_gleitzeit(start_monat, heute, include_missing)
         if "error" not in ergebnis_monat:
-            self.kummulierte_gleitzeit_monat = round(ergebnis_monat["durchschnitt_gleitzeit_stunden"], 2)
+            gesamt_stunden_monat = ergebnis_monat.get("gesamt_gleitzeit_stunden")
+            if gesamt_stunden_monat is None:
+                logger.warning("berechne_durchschnittliche_gleitzeit lieferte keine Gesamtstunden für den Monat – fallback auf Durchschnitt")
+                gesamt_stunden_monat = ergebnis_monat.get("durchschnitt_gleitzeit_stunden", 0.0)
+            self.kummulierte_gleitzeit_monat = round(gesamt_stunden_monat, 2)
         else:
             logger.warning(f"Fehler bei Kummulation (Monat): {ergebnis_monat.get('error')}")
             self.kummulierte_gleitzeit_monat = 0.0
@@ -1464,7 +1950,11 @@ class ModellTrackTime():
         start_quartal = heute.replace(month=start_monat_quartal, day=1)
         ergebnis_quartal = self.berechne_durchschnittliche_gleitzeit(start_quartal, heute, include_missing)
         if "error" not in ergebnis_quartal:
-            self.kummulierte_gleitzeit_quartal = round(ergebnis_quartal["durchschnitt_gleitzeit_stunden"], 2)
+            gesamt_stunden_quartal = ergebnis_quartal.get("gesamt_gleitzeit_stunden")
+            if gesamt_stunden_quartal is None:
+                logger.warning("berechne_durchschnittliche_gleitzeit lieferte keine Gesamtstunden für das Quartal – fallback auf Durchschnitt")
+                gesamt_stunden_quartal = ergebnis_quartal.get("durchschnitt_gleitzeit_stunden", 0.0)
+            self.kummulierte_gleitzeit_quartal = round(gesamt_stunden_quartal, 2)
         else:
             logger.warning(f"Fehler bei Kummulation (Quartal): {ergebnis_quartal.get('error')}")
             self.kummulierte_gleitzeit_quartal = 0.0
@@ -1475,7 +1965,11 @@ class ModellTrackTime():
         start_jahr = heute.replace(month=1, day=1)
         ergebnis_jahr = self.berechne_durchschnittliche_gleitzeit(start_jahr, heute, include_missing)
         if "error" not in ergebnis_jahr:
-            self.kummulierte_gleitzeit_jahr = round(ergebnis_jahr["durchschnitt_gleitzeit_stunden"], 2)
+            gesamt_stunden_jahr = ergebnis_jahr.get("gesamt_gleitzeit_stunden")
+            if gesamt_stunden_jahr is None:
+                logger.warning("berechne_durchschnittliche_gleitzeit lieferte keine Gesamtstunden für das Jahr – fallback auf Durchschnitt")
+                gesamt_stunden_jahr = ergebnis_jahr.get("durchschnitt_gleitzeit_stunden", 0.0)
+            self.kummulierte_gleitzeit_jahr = round(gesamt_stunden_jahr, 2)
         else:
             logger.warning(f"Fehler bei Kummulation (Jahr): {ergebnis_jahr.get('error')}")
             self.kummulierte_gleitzeit_jahr = 0.0
@@ -1483,60 +1977,30 @@ class ModellTrackTime():
 
 
 class ModellLogin():
-    """
-    Geschäftslogik-Klasse für Login und Registrierung.
-    
-    Diese Klasse verwaltet:
-    - Registrierung neuer Benutzer mit Validierung
-    - Login-Funktionalität mit Passwortprüfung
-    - Vorgesetzten-Verwaltung
-    - Feedback-Nachrichten für die UI
-    
-    Attributes:
-        neuer_nutzer_* (str/int): Eingabedaten für Registrierung
-        neuer_nutzer_rückmeldung (str): Feedback zur Registrierung
-        anmeldung_* (str): Eingabedaten für Login
-        anmeldung_rückmeldung (str): Feedback zum Login
-        anmeldung_mitarbeiter_id_validiert (int): ID des erfolgreich angemeldeten Nutzers
-    """
     def __init__(self):
-        """Initialisiert ein ModellLogin-Objekt mit leeren Standardwerten."""
-        self.neuer_nutzer_name = None
-        self.neuer_nutzer_passwort = None
-        self.neuer_nutzer_passwort_val = None
-        self.neuer_nutzer_vertragliche_wochenstunden = None
-        self.neuer_nutzer_geburtsdatum = None
-        self.neuer_nutzer_rückmeldung = ""
-        self.neuer_nutzer_vorgesetzter = None
-        self.neuer_nutzer_grün = None
-        self.neuer_nutzer_rot = None
-        self.anmeldung_name = None
-        self.anmeldung_passwort = None
-        self.anmeldung_rückmeldung = ""
-        self.anmeldung_mitarbeiter_id_validiert = None
+
+       self.neuer_nutzer_name = None
+       self.neuer_nutzer_passwort = None
+       self.neuer_nutzer_passwort_val = None
+       self.neuer_nutzer_vertragliche_wochenstunden = None
+       self.neuer_nutzer_geburtsdatum = None
+       self.neuer_nutzer_rückmeldung = ""
+       self.neuer_nutzer_vorgesetzter = None
+       self.neuer_nutzer_grün = None
+       self.neuer_nutzer_rot = None
+       self.anmeldung_name = None
+       self.anmeldung_passwort = None
+       self.anmeldung_rückmeldung = ""
+       self.anmeldung_mitarbeiter_id_validiert = None
        
 
 
     def neuen_nutzer_anlegen(self):
-        """
-        Registriert einen neuen Benutzer in der Datenbank.
-        
-        Führt umfassende Validierungen durch:
-        - Prüfung auf leere Felder
-        - Datumsformat-Validierung
-        - Zahlenformat-Validierung
-        - Passwort-Übereinstimmung
-        - Ampel-Grenzwerte-Logik
-        - Vorgesetzten-Existenz
-        - Benutzername-Eindeutigkeit
-        
-        Setzt neuer_nutzer_rückmeldung mit Erfolgs- oder Fehlermeldung.
-        """
-        # Input-Validierung
+        # Die Input-Validierung ist bereits sehr gut!
         if not self.neuer_nutzer_name:
             self.neuer_nutzer_rückmeldung = "Bitte gib einen Namen ein"
             return
-        # Weitere Validierungen folgen im Code...
+        # ... (alle anderen 'if not ...')
         
         # Die try-except-Blöcke für strptime und int() sind ebenfalls sehr gut.
         try:
@@ -1611,22 +2075,6 @@ class ModellLogin():
 
 
     def login(self):
-        """
-        Authentifiziert einen Benutzer und aktualisiert das letzte Login-Datum.
-        
-        Prozess:
-        1. Datenbankverbindung prüfen
-        2. Benutzer anhand des Namens suchen
-        3. Passwort vergleichen (Klartext - unsicher, nur für Demo!)
-        4. Bei Erfolg: letzter_login aktualisieren und ID speichern
-        
-        Returns:
-            bool: True bei erfolgreichem Login, False bei Fehler
-            
-        Note:
-            Passwörter werden im Klartext gespeichert. In einer Produktionsumgebung
-            sollte ein Hash-Verfahren (z.B. bcrypt) verwendet werden!
-        """
         if not session:
             self.anmeldung_rückmeldung = "Datenbankverbindung fehlgeschlagen."
             return False
@@ -1643,16 +2091,7 @@ class ModellLogin():
             elif nutzer.password == self.anmeldung_passwort:
                 self.anmeldung_rückmeldung = "Login erfolgreich"
                 self.anmeldung_mitarbeiter_id_validiert = nutzer.mitarbeiter_id
-                
-                # 'letzter_login' aktualisieren
-                try:
-                    nutzer.letzter_login = date.today()
-                    session.commit()
-                    logger.info(f"Erfolgreicher Login für: {self.anmeldung_name}. Letzter Login aktualisiert.")
-                except SQLAlchemyError as e:
-                    logger.error(f"Fehler beim Aktualisieren des 'letzter_login' Datums für {self.anmeldung_name}: {e}", exc_info=True)
-                    session.rollback() # Rollback, aber Login trotzdem erlauben
-                    
+                logger.info(f"Erfolgreicher Login für: {self.anmeldung_name}. letzter_login wird später aktualisiert.")
                 return True
 
             else:
