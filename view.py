@@ -31,6 +31,7 @@ from kivy.uix.spinner import Spinner
 from kivy.uix.scrollview import ScrollView
 from kivymd.uix.button import MDIconButton
 from kivy.uix.anchorlayout import AnchorLayout
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.popup import Popup
 from kivy.graphics import Color, Rectangle, Line, Ellipse, RoundedRectangle
 from kivy.uix.image import Image
@@ -38,6 +39,8 @@ from kivy.uix.checkbox import CheckBox
 from kivymd.uix.label import MDLabel
 from kivymd.uix.card import MDCard
 from kivy.clock import Clock
+from kivy.metrics import dp
+from kivy.metrics import sp
 
 from window_size import set_fixed_window_size
 
@@ -73,32 +76,32 @@ class LoginView(Screen):
         self.height_window = 270
         set_fixed_window_size((self.width_window, self.height_window))
 
-        self.layout = BoxLayout(orientation="vertical", padding=30, spacing=10)
+        self.layout = BoxLayout(orientation="vertical", padding=dp(24), spacing=dp(8))
 
         # Horizontaler Bereich für Logo und Überschrift
-        top_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=80)
-        title = Label(text="Anmeldung", font_size=24, valign="middle", halign="left")
+        top_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(64))
+        title = Label(text="Anmeldung", font_size=sp(20), valign="middle", halign="left")
         title.bind(size=title.setter("text_size"))
-        logo = Image(source="velqor.png", size_hint=(None, None), size=(90, 90))
+        logo = Image(source="velqor.png", size_hint=(None, None), size=(dp(77), dp(77)))
         top_row.add_widget(title)
         top_row.add_widget(logo)
 
         self.layout.add_widget(top_row)
 
         self.username_input = TabTextInput(multiline=False, hint_text="Benutzername", 
-                                           size_hint_y=None, height=35)
+                                           size_hint_y=None, height=dp(28))
         self.password_input = TabTextInput(password=True, multiline=False, hint_text="Passwort", 
-                                           size_hint_y=None, height=35)
+                                           size_hint_y=None, height=dp(28))
 
         self.anmeldung_rückmeldung_label = Label(text="", color=(1, 0, 0))
         self.layout.add_widget(self.username_input)
         self.layout.add_widget(self.password_input)
         self.layout.add_widget(self.anmeldung_rückmeldung_label)
 
-        button_layout = BoxLayout(spacing=10)
-        self.login_button = Button(text="Login", size_hint=(None, None), size=(165, 40), font_size=20)
+        button_layout = BoxLayout(spacing=dp(8))
+        self.login_button = Button(text="Login", size_hint=(None, None), size=(dp(132), dp(32)), font_size=sp(16))
         self.change_view_registrieren_button = Button(text="Registrieren", size_hint=(None, None), 
-                                                      size=(165, 40), font_size=20)
+                                                      size=(dp(132), dp(32)), font_size=sp(16))
         button_layout.add_widget(self.change_view_registrieren_button)
         button_layout.add_widget(self.login_button)
         self.layout.add_widget(button_layout)
@@ -150,12 +153,12 @@ class RegisterView(Screen):
         self.date_picker = MDDatePicker()
 
         # Hauptlayout (alles untereinander)
-        self.layout = BoxLayout(orientation="vertical", padding=30, spacing=20)
+        self.layout = BoxLayout(orientation="vertical", padding=dp(24), spacing=dp(16))
 
         # Überschrift 
-        self.layout.add_widget(Label(text="Registrieren", font_size=24, size_hint_y=None, height=20))
+        self.layout.add_widget(Label(text="Registrieren", font_size=sp(20), size_hint_y=None, height=dp(16)))
 
-        grid = GridLayout(cols=2, spacing=10, size_hint_y=None, height=240)
+        grid = GridLayout(cols=2, spacing=dp(8), size_hint_y=None, height=dp(192))
         grid.bind(minimum_height=grid.setter('height'))
         
         # Eingabefelder
@@ -163,100 +166,100 @@ class RegisterView(Screen):
             multiline=False,
             hint_text="Vor- und Nachname",
             size_hint_y=None,
-            height=35
+            height=dp(28)
         )
         self.reg_password_input = TabTextInput(
             password=True,
             multiline=False,
             hint_text="Passwort",
             size_hint_y=None,
-            height=35
+            height=dp(28)
         )
         self.reg_password_input_rep = TabTextInput(
             password=True,
             multiline=False,
             hint_text="Passwort wiederholen",
             size_hint_y=None,
-            height=35
+            height=dp(28)
         )
         self.reg_woechentliche_arbeitszeit = Spinner(
             text="Wöchentliche Arbeitszeit wählen",
             values=("30", "35", "40"),  # muss String sein
             size_hint_y=None,
-            height=40,
+            height=dp(32),
         )
         self.reg_geburtsdatum = TabTextInput(
             hint_text="TT/MM/JJJJ",
             size_hint_y=None,
             readonly=True,
             multiline=False,
-            height=35
+            height=dp(28)
         )
         self.reg_limit_green = TabTextInput(
             multiline=False,
             input_filter='int',
             hint_text="Grenzwert (Zahl)",
             size_hint_y=None,
-            height=35
+            height=dp(28)
         )
         self.reg_limit_red = TabTextInput(
             multiline=False,
             input_filter='int',
             hint_text="Grenzwert (Zahl)",
             size_hint_y=None,
-            height=35
+            height=dp(28)
         )
         self.reg_superior = TabTextInput(
             multiline=False,
             hint_text="Name des Vorgesetzten",
             size_hint_y=None,
-            height=35
+            height=dp(28)
         )
 
         grid.add_widget(Label(
-            text="Vor- und Nachname:", size_hint=(None, None), size=(230, 35), text_size=(230, 35),
+            text="Vor- und Nachname:", size_hint=(None, None), size=(dp(184), dp(28)), text_size=(dp(184), dp(28)),
             halign="left", valign="middle")
         )
         grid.add_widget(self.reg_username_input)
         grid.add_widget(Label(
-            text="Passwort:", size_hint=(None, None), size=(230, 35), text_size=(230, 35),
+            text="Passwort:", size_hint=(None, None), size=(dp(184), dp(28)), text_size=(dp(184), dp(28)),
             halign="left", valign="middle")
         )
         grid.add_widget(self.reg_password_input)
         grid.add_widget(Label(
-            text="Passwort wiederholen:", size_hint=(None, None), size=(230, 35), text_size=(230, 35),
+            text="Passwort wiederholen:", size_hint=(None, None), size=(dp(184), dp(28)), text_size=(dp(184), dp(28)),
             halign="left", valign="middle")
         )
         grid.add_widget(self.reg_password_input_rep)
         grid.add_widget(Label(
-            text="Wöchentliche Arbeitszeit:", size_hint=(None, None), size=(230, 40), text_size=(230, 40),
+            text="Wöchentliche Arbeitszeit:", size_hint=(None, None), size=(dp(184), dp(32)), text_size=(dp(184), dp(32)),
             halign="left", valign="middle")
         )
         grid.add_widget(self.reg_woechentliche_arbeitszeit)
         grid.add_widget(Label(
-            text="Geburtsdatum:", size_hint=(None, None), size=(230, 35), text_size=(230, 35),
+            text="Geburtsdatum:", size_hint=(None, None), size=(dp(184), dp(28)), text_size=(dp(184), dp(28)),
             halign="left", valign="middle")
         )
         grid.add_widget(self.reg_geburtsdatum)
         grid.add_widget(Label(
-            text="Grenzwerte:", size_hint=(None, None), size=(230, 35), text_size=(230, 35),
+            text="Grenzwerte:", size_hint=(None, None), size=(dp(184), dp(28)), text_size=(dp(184), dp(28)),
             halign="left", valign="middle")
         )
-        limit_layout = BoxLayout(spacing=10)
+        limit_layout = BoxLayout(spacing=dp(8))
         limit_layout.add_widget(Label(
-            text="grün:", size_hint=(None, None), size=(40, 35), text_size=(40, 35),
+            text="grün:", size_hint=(None, None), size=(dp(34), dp(28)), text_size=(dp(34), dp(28)),
             halign="right", valign="middle")
         )
         limit_layout.add_widget(self.reg_limit_green)
         
         limit_layout.add_widget(Label(
-            text="rot:", size_hint=(None, None), size=(30, 35), text_size=(30, 35),
+            text="rot:", size_hint=(None, None), size=(dp(24), dp(28)), text_size=(dp(24), dp(28)),
             halign="right", valign="middle")
         )
         limit_layout.add_widget(self.reg_limit_red)
         grid.add_widget(limit_layout)
         grid.add_widget(Label(
-            text="Vorgesetzte/r:", size_hint=(None, None), size=(230, 35), text_size=(230, 35),
+            text="Vorgesetzte/r:", size_hint=(None, None), size=(dp(184), dp(28)), text_size=(dp(184), dp(28)),
             halign="left", valign="middle")
         )
         grid.add_widget(self.reg_superior)
@@ -264,15 +267,15 @@ class RegisterView(Screen):
         self.layout.add_widget(grid)
 
         # Button und Labels unten hinzufügen
-        button_layout = BoxLayout(spacing=10)
-        self.change_view_login_button = Button(text="Zurück zum Login", size_hint=(None, None), size=(300, 50), 
-                                               font_size=20)
-        self.register_button = Button(text="Registrieren", size_hint=(None, None), size=(300, 50), font_size=20)
+        button_layout = BoxLayout(spacing=dp(8))
+        self.change_view_login_button = Button(text="Zurück zum Login", size_hint=(None, None), size=(dp(240), dp(40)), 
+                                               font_size=sp(16))
+        self.register_button = Button(text="Registrieren", size_hint=(None, None), size=(dp(240), dp(40)), font_size=sp(16))
         self.register_rückmeldung_label = Label(
             text="",
-            font_size=18,
+            font_size=sp(15),
             size_hint_y=None,
-            height=30,
+            height=dp(24),
             color=(1, 0, 0)
         )
         self.layout.add_widget(self.register_rückmeldung_label)
@@ -332,7 +335,7 @@ class MainView(Screen):
             **kwargs: Keyword-Argumente für Screen
         """
         super().__init__(**kwargs)
-        self.layout = TabbedPanel(do_default_tab=False, tab_width=170)
+        self.layout = TabbedPanel(do_default_tab=False, tab_width=dp(136))
         self.date_picker = MDDatePicker()
         self.time_picker = MDTimePicker()
         self.time_tracking_tab_height = 590
@@ -353,33 +356,33 @@ class MainView(Screen):
 
         self.time_tracking_tab = TabbedPanelItem(text="Zeiterfassung")
 
-        main_layout = BoxLayout(orientation='horizontal', padding=20)
+        main_layout = BoxLayout(orientation='horizontal', padding=dp(16))
 
         # Hauptlayout vertikal
-        self.time_tracking_layout = BoxLayout(orientation='vertical', spacing=20, size_hint_y=None, height=self.time_tracking_tab_height)
+        self.time_tracking_layout = BoxLayout(orientation='vertical', spacing=dp(16), size_hint_y=None, height=dp(self.time_tracking_tab_height*0.8))
         self.time_tracking_layout.bind(minimum_height=self.time_tracking_layout.setter('height'))
         self.time_tracking_layout.pos_hint = {"top": 1}
 
         self.welcome_label = Label(
             size_hint=(None, None),
-            size=(600, 50),
-            text_size=(600, 50),
+            size=(dp(480), dp(40)),
+            text_size=(dp(480), dp(40)),
             halign="left",
             valign="top",
-            font_size=28
+            font_size=sp(23)
         )
         self.time_tracking_layout.add_widget(self.welcome_label)
 
         # Stempeln
-        self.reihe_1 = BoxLayout(orientation='horizontal', spacing=15, size_hint_y=None, height=40)
+        self.reihe_1 = BoxLayout(orientation='horizontal', spacing=dp(12), size_hint_y=None, height=dp(32))
 
-        self.stempel_button = Button(text="Stempeln", size_hint=(None, None), size=(130, 40))
+        self.stempel_button = Button(text="Stempeln", size_hint=(None, None), size=(dp(104), dp(32)))
 
         # Timer
         self.timer_label = MDLabel(
             text="00:00:00",
             size_hint_x=None,
-            width=340,
+            width=dp(305),
             halign="center",
             font_style="H5",
             bold=True,
@@ -391,15 +394,15 @@ class MainView(Screen):
         self.time_tracking_layout.add_widget(self.reihe_1)
 
         # Gleitzeit
-        self.reihe_2 = BoxLayout(orientation='horizontal', spacing=15, size_hint_y=None, height=50)
+        self.reihe_2 = BoxLayout(orientation='horizontal', spacing=dp(12), size_hint_y=None, height=dp(40))
 
         self.anzeige_gleitzeit_text_label = Label(
-            text="Aktuelle Gleitzeit:", size_hint=(None, None), size=(160, 40),
-            text_size=(160, 40), halign="left", valign="bottom", font_size=20
+            text="Aktuelle Gleitzeit:", size_hint=(None, None), size=(dp(128), dp(32)),
+            text_size=(dp(128), dp(32)), halign="left", valign="bottom", font_size=sp(16)
         )
         self.anzeige_gleitzeit_wert_label = Label(
-            text="", size_hint=(None, None), size=(220, 40),
-            text_size=(220, 40), halign="left", valign="bottom", font_size=20
+            text="", size_hint=(None, None), size=(dp(176), dp(32)),
+            text_size=(dp(176), dp(32)), halign="left", valign="bottom", font_size=sp(16)
         )
         self.reihe_2.add_widget(self.anzeige_gleitzeit_text_label)
         self.reihe_2.add_widget(self.anzeige_gleitzeit_wert_label)
@@ -409,74 +412,74 @@ class MainView(Screen):
         flexible_time_header = Label(
             text="Kumulierte Gleitzeit",
             size_hint=(None, None),
-            size=(220, 30),
-            text_size=(220, 30),
+            size=(dp(176), dp(24)),
+            text_size=(dp(176), dp(24)),
             halign="left",
             valign="bottom",
-            font_size=20
+            font_size=sp(16)
         )
         self.time_tracking_layout.add_widget(flexible_time_header)
 
         input_card = MDCard(
             orientation="vertical",
-            padding=25,
-            spacing=15,
+            padding=dp(20),
+            spacing=dp(12),
             size_hint=(None, None),
-            size=(380, 220),
+            size=(dp(304), dp(176)),
             md_bg_color=(0.25, 0.25, 0.25, 1),
             radius=[10, 10, 10, 10]
         )
 
-        flexible_time_grid = GridLayout(cols=2, spacing=10, size_hint_y=None, height=110)
+        flexible_time_grid = GridLayout(cols=2, spacing=dp(8), size_hint_y=None, height=dp(88))
         flexible_time_grid.add_widget(Label(
             text="Monat:",
             size_hint=(None, None),
-            size=(70, 30),
-            text_size=(70, 30),
+            size=(dp(56), dp(24)),
+            text_size=(dp(56), dp(24)),
             halign="left",
             valign="middle"
         ))
         self.flexible_time_month = BorderedLabel(
-            size_hint=(None, None), size=(100, 30), text_size=(80, 30), halign="right", valign="middle"
+            size_hint=(None, None), size=(dp(110), dp(24)), text_size=(dp(94), dp(24)), halign="right", valign="middle"
         )
         flexible_time_grid.add_widget(self.flexible_time_month)
         flexible_time_grid.add_widget(Label(
             text="Quartal:",
             size_hint=(None, None),
-            size=(70, 30),
-            text_size=(70, 30),
+            size=(dp(56), dp(24)),
+            text_size=(dp(56), dp(24)),
             halign="left",
             valign="middle"
         ))
         self.flexible_time_quarter = BorderedLabel(
-            size_hint=(None, None), size=(100, 30), text_size=(80, 30), halign="right", valign="middle"
+            size_hint=(None, None), size=(dp(110), dp(24)), text_size=(dp(94), dp(24)), halign="right", valign="middle"
         )
         flexible_time_grid.add_widget(self.flexible_time_quarter)
         flexible_time_grid.add_widget(Label(
             text="Jahr:",
             size_hint=(None, None),
-            size=(70, 30),
-            text_size=(70, 30),
+            size=(dp(56), dp(24)),
+            text_size=(dp(56), dp(24)),
             halign="left",
             valign="middle"
         ))
         self.flexible_time_year = BorderedLabel(
-            size_hint=(None, None), size=(100, 30), text_size=(80, 30), halign="right", valign="middle"
+            size_hint=(None, None), size=(dp(110), dp(24)), text_size=(dp(94), dp(24)), halign="right", valign="middle"
         )
         flexible_time_grid.add_widget(self.flexible_time_year)
         input_card.add_widget(flexible_time_grid)
 
         # Zeile mit Checkbox und Label nebeneinander
-        checkbox_row = BoxLayout(spacing=10, size_hint_y=None, height=40)
+        checkbox_row = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(32))
 
-        self.checkbox = CheckBox(size_hint=(None, None), size=(30, 30), active=False)
+        self.checkbox = CheckBox(size_hint=(None, None), size=(dp(24), dp(24)), active=False)
         checkbox_row.add_widget(self.checkbox)
 
         checkbox_row.add_widget(Label(
             text="Tage ohne Stempel berücksichtigen",
             size_hint=(None, None),
-            size=(300, 30),
-            text_size=(300, 30),
+            size=(dp(240), dp(24)),
+            text_size=(dp(240), dp(24)),
             halign="left",
             valign="middle"
         ))
@@ -485,11 +488,11 @@ class MainView(Screen):
         self.time_tracking_layout.add_widget(input_card)
 
         # Vertikales Layout für Logo und Ampel
-        widgets_layout = BoxLayout(orientation="vertical", spacing=20, size_hint=(None, None), size=(100, self.time_tracking_tab_height))
+        widgets_layout = BoxLayout(orientation="vertical", spacing=dp(16), size_hint=(None, None), size=(dp(80), dp(self.time_tracking_tab_height*0.8)))
         widgets_layout.bind(minimum_height=widgets_layout.setter('height'))
         widgets_layout.pos_hint = {"right": 1, "top": 1}
 
-        logo = Image(source="bbq.png", size_hint=(None, None), size=(80, 80))
+        logo = Image(source="bbq.png", size_hint=(None, None), size=(dp(64), dp(64)))
         logo.pos_hint = {"right": 1}
         widgets_layout.add_widget(logo)
 
@@ -516,71 +519,71 @@ class MainView(Screen):
         """
         
         self.zeitnachtrag_tab = TabbedPanelItem(text="Zeit nachtragen")
-        self.zeitnachtrag_layout = BoxLayout(orientation='vertical', padding=20, spacing=15, 
-                                             size_hint_y=None, height=self.time_tracking_tab_height)
+        self.zeitnachtrag_layout = BoxLayout(orientation='vertical', padding=dp(16), spacing=dp(12), 
+                                             size_hint_y=None, height=dp(self.time_tracking_tab_height))
         self.zeitnachtrag_layout.bind(minimum_height=self.zeitnachtrag_layout.setter('height'))
 
         # Überschrift
         self.überschrift = Label(
             text="Manuelles Nachtragen von Zeitstempeln",
             size_hint=(1, None),
-            height=30,
+            height=dp(24),
             halign="left",
             valign="middle",
-            font_size=20
+            font_size=sp(16)
         )
         self.überschrift.bind(size=self.überschrift.setter('text_size'))
         self.zeitnachtrag_layout.add_widget(self.überschrift)
 
         input_card = MDCard(
             orientation="vertical",
-            padding=25,
-            spacing=15,
+            padding=dp(20),
+            spacing=dp(12),
             size_hint=(None, None),
-            size=(370, 265),
+            size=(dp(296), dp(212)),
             md_bg_color=(0.25, 0.25, 0.25, 1),
             radius=[10, 10, 10, 10]
         )
 
         # GridLayout für Datum, Uhrzeit und Art des Eintrags
-        self.grid = GridLayout(cols=2, padding=(0, 10, 0, 0), spacing=15, size_hint_y=None, height=170)
+        self.grid = GridLayout(cols=2, padding=(dp(0), dp(8), dp(0), dp(0)), spacing=dp(12), size_hint_y=None, height=dp(136))
 
         # Art des Eintrags (Zeitstempel/Urlaub/Krank)
-        self.grid.add_widget(Label(text="Art des Eintrags: ", size_hint=(None, None), size=(130, 40),
-                            text_size=(130, 40), halign="left", valign="middle"))
+        self.grid.add_widget(Label(text="Art des Eintrags: ", size_hint=(None, None), size=(dp(115), dp(32)),
+                            text_size=(dp(115), dp(32)), halign="left", valign="middle"))
         
         self.eintrag_art_spinner = Spinner(
             text="Bitte wählen",
             values=("Zeitstempel", "Urlaub", "Krank"),
             size_hint=(None, None),
-            size=(175, 40)
+            size=(dp(129), dp(32))
         )
         self.grid.add_widget(self.eintrag_art_spinner)
 
         # Datum
-        self.grid.add_widget(Label(text="Datum: ", size_hint=(None, None), size=(130, 35),
-                                text_size=(130, 35), halign="left", valign="middle"))
+        self.grid.add_widget(Label(text="Datum: ", size_hint=(None, None), size=(dp(115), dp(28)),
+                                text_size=(dp(115), dp(28)), halign="left", valign="middle"))
         self.date_input = TextInput(hint_text="TT/MM/JJJJ", size_hint=(None, None),
-                                    size=(175, 35), readonly=True, multiline=False)
+                                    size=(dp(129), dp(28)), readonly=True, multiline=False)
         self.grid.add_widget(self.date_input)
 
         # Uhrzeit (mit Label in separate Variablen für Opacity-Steuerung)
-        self.time_label = Label(text="Uhrzeit: ", size_hint=(None, None), size=(130, 35),
-                                text_size=(130, 35), halign="left", valign="middle")
+        self.time_label = Label(text="Uhrzeit: ", size_hint=(None, None), size=(dp(115), dp(28)),
+                                text_size=(dp(115), dp(28)), halign="left", valign="middle")
         self.grid.add_widget(self.time_label)
         self.time_input = TextInput(hint_text="HH:MM", size_hint=(None, None),
-                                    size=(175, 35), readonly=True, multiline=False)
+                                    size=(dp(129), dp(28)), readonly=True, multiline=False)
         self.grid.add_widget(self.time_input)
 
         input_card.add_widget(self.grid)
 
         # Button zum Nachtragen
-        self.nachtragen_button = Button(text="Eintrag speichern", size_hint=(None, None), size=(320, 40))
+        self.nachtragen_button = Button(text="Eintrag speichern", size_hint=(None, None), size=(dp(256), dp(32)))
         input_card.add_widget(self.nachtragen_button)
 
         # Rückmeldung
-        self.nachtrag_feedback = Label(text="", size_hint=(None, None), size=(500, 60),
-                                    text_size=(500, 60), halign="left", valign="middle")
+        self.nachtrag_feedback = Label(text="", size_hint=(None, None), size=(dp(400), dp(48)),
+                                    text_size=(dp(400), dp(48)), halign="left", valign="middle")
 
         self.zeitnachtrag_layout.add_widget(input_card)
         self.zeitnachtrag_layout.add_widget(self.nachtrag_feedback)
@@ -613,7 +616,7 @@ class MainView(Screen):
         self.benachrichtigungen_tab = TabbedPanelItem(text="Benachrichtigungen")
 
         # Hauptlayout
-        main_layout = BoxLayout(orientation='vertical', padding=20, spacing=15)
+        main_layout = BoxLayout(orientation='vertical', padding=dp(16), spacing=dp(12))
 
         # Scrollbarer Bereich
         scroll_view = ScrollView(size_hint=(1, 1))
@@ -621,9 +624,9 @@ class MainView(Screen):
         # GridLayout für Benachrichtigungen
         self.benachrichtigungen_grid = GridLayout(
             cols=1,
-            spacing=10,
+            spacing=dp(8),
             size_hint_y=None,
-            padding=(0, 10)
+            padding=(dp(0), dp(8))
         )
         self.benachrichtigungen_grid.bind(minimum_height=self.benachrichtigungen_grid.setter('height'))
 
@@ -647,9 +650,9 @@ class MainView(Screen):
 
         box = BoxLayout(
             orientation='vertical',
-            padding=10,
+            padding=dp(8),
             size_hint_y=None,
-            height=80
+            height=dp(64)
         )
 
         # Stilvolle Umrandung oder Hintergrund
@@ -663,10 +666,10 @@ class MainView(Screen):
         # Text der Benachrichtigung
         label_text = Label(
             text=text,
-            font_size=16,
+            font_size=sp(13),
             halign="left",
             valign="middle",
-            text_size=(600, None),
+            text_size=(dp(480), None),
             size_hint_y=None
         )
         label_text.bind(texture_size=lambda _, s: setattr(label_text, 'height', s[1]))
@@ -675,12 +678,12 @@ class MainView(Screen):
         label_date = Label(
             text=f"[i]{datum}[/i]",
             markup=True,
-            font_size=13,
+            font_size=sp(11),
             color=(0.6, 0.6, 0.6, 1),
             halign="left",
             valign="middle",
             size_hint_y=None,
-            height=20
+            height=dp(16)
         )
 
         box.add_widget(label_text)
@@ -700,7 +703,7 @@ class MainView(Screen):
         self.settings_horizontal_layout = BoxLayout(orientation='horizontal')
 
         # Passwort ändern Layout
-        self.settings_layout = BoxLayout(orientation='vertical', padding=20, spacing=15, 
+        self.settings_layout = BoxLayout(orientation='vertical', padding=dp(16), spacing=dp(12), 
                                          size_hint=(0.55, None))
         self.settings_layout.bind(minimum_height=self.settings_layout.setter('height'))
         self.settings_layout.pos_hint = {"top": 1}
@@ -708,40 +711,40 @@ class MainView(Screen):
         password_label = Label(
             text="Passwort ändern",
             size_hint=(1, None),
-            height=30,
+            height=dp(24),
             halign="left",
             valign="middle",
-            font_size=20
+            font_size=sp(16)
         )
         password_label.bind(size=password_label.setter('text_size'))
         self.settings_layout.add_widget(password_label)
         
         right_card = MDCard(
             orientation="vertical",
-            padding=25,
-            spacing=15,
+            padding=dp(20),
+            spacing=dp(12),
             size_hint=(None, None),
-            size=(350, 190),
+            size=(dp(280), dp(152)),
             md_bg_color=(0.25, 0.25, 0.25, 1),
             radius=[10, 10, 10, 10]
         )
 
         self.new_password_input = TabTextInput(password=True, hint_text="Neues Passwort", 
-                                            size_hint=(None, None), size=(300, 35))
+                                            size_hint=(None, None), size=(dp(240), dp(28)))
         right_card.add_widget(self.new_password_input)
         self.repeat_password_input = TabTextInput(password=True, hint_text="Neues Passwort wiederholen", 
-                                               size_hint=(None, None), size=(300, 35))
+                                               size_hint=(None, None), size=(dp(240), dp(28)))
         right_card.add_widget(self.repeat_password_input)
         self.change_password_button = Button(text="Passwort ändern", size_hint=(None, None), 
-                                             size=(300, 40))
-        self.change_password_feedback = Label(text="", size_hint=(None, None), size=(500, 60),
-                        text_size=(500, None), halign="left", valign="middle")
+                                             size=(dp(240), dp(32)))
+        self.change_password_feedback = Label(text="", size_hint=(None, None), size=(dp(400), dp(48)),
+                        text_size=(dp(400), None), halign="left", valign="middle")
         right_card.add_widget(self.change_password_button)
         self.settings_layout.add_widget(right_card)
         self.settings_layout.add_widget(self.change_password_feedback)
 
         # Allgemeine Einstellungen Layout
-        self.settings_layout_left = BoxLayout(orientation='vertical', padding=20, spacing=15, 
+        self.settings_layout_left = BoxLayout(orientation='vertical', padding=dp(16), spacing=dp(12), 
                                              size_hint=(0.45, None))
         self.settings_layout_left.bind(minimum_height=self.settings_layout_left.setter('height'))
         self.settings_layout_left.pos_hint = {"top": 1}
@@ -749,65 +752,61 @@ class MainView(Screen):
         settings_label = Label(
             text="Allgemeine Einstellungen",
             size_hint=(1, None),
-            height=30,
+            height=dp(24),
             halign="left",
             valign="middle",
-            font_size=20
+            font_size=sp(16)
         )
         settings_label.bind(size=settings_label.setter('text_size'))
         self.settings_layout_left.add_widget(settings_label)
 
         left_card = MDCard(
             orientation="vertical",
-            padding=25,
+            padding=dp(20),
             size_hint=(None, None),
-            size=(425, 305),
+            size=(dp(340), dp(248)),
             md_bg_color=(0.25, 0.25, 0.25, 1),
             radius=[10, 10, 10, 10]
         )
 
-        self.grid = GridLayout(cols=2, spacing=15, size_hint=(0.5, 1))
+        self.grid = GridLayout(cols=2, spacing=dp(12), size_hint=(0.5, 1))
         self.grid.bind(minimum_height=self.grid.setter('height'))
         
-        self.grid.add_widget(Label(text="Stundenwoche: ", font_size=18, size_hint=(None, None), 
-                                   size=(160, 40), text_size=(160, 40), halign="left", valign="middle"))
+        self.grid.add_widget(Label(text="Stundenwoche: ", font_size=sp(15), size_hint=(None, None), 
+                                   size=(dp(135), dp(32)), text_size=(dp(135), dp(32)), halign="left", valign="middle"))
         self.grid.add_widget(Spinner(text="Bitte wählen", values=("30 Stunden", "35 Stunden", "40 Stunden"), 
-                                     size_hint=(None, None), size=(200, 40)))
-        self.grid.add_widget(Label(text="Anzahl Urlaubstage: ", font_size=18, size_hint=(None, None), 
-                                   size=(160, 35), text_size=(160, 35), halign="left", valign="middle"))
-        self.day_off_input = TabTextInput(multiline=False, size_hint=(None, None), size=(200, 35), halign="right",
+                                     size_hint=(None, None), size=(dp(153), dp(32))))
+        self.grid.add_widget(Label(text="Anzahl Urlaubstage: ", font_size=sp(15), size_hint=(None, None), 
+                                   size=(dp(135), dp(28)), text_size=(dp(135), dp(28)), halign="left", valign="middle"))
+        self.day_off_input = TabTextInput(multiline=False, size_hint=(None, None), size=(dp(153), dp(28)), halign="right",
                                           input_filter='int')
         self.grid.add_widget(self.day_off_input)
 
-        self.grid.add_widget(Label(text="Grenzwerte: ", font_size=18, size_hint=(None, None), size=(160, 35), 
-                                   text_size=(160, 35), halign="left", valign="middle"))
-        self.horizonatl_layout1 = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=40)
-        self.horizonatl_layout1.add_widget(Label(text="grün: ", font_size=18, size_hint=(None, None), size=(40, 35), 
-                                                 text_size=(40, 35), halign="left", valign="middle"))
-        self.green_limit_input = TabTextInput(multiline=False, size_hint=(None, None), size=(150, 35), halign="right",
+        self.grid.add_widget(Label(text="Grenzwerte: ", font_size=sp(15), size_hint=(None, None), size=(dp(135), dp(28)), 
+                                   text_size=(dp(135), dp(28)), halign="left", valign="middle"))
+        self.horizonatl_layout1 = BoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(32))
+        self.horizonatl_layout1.add_widget(Label(text="grün: ", font_size=sp(15), size_hint=(None, None), size=(dp(35), dp(28)), 
+                                                 text_size=(dp(35), dp(28)), halign="left", valign="middle"))
+        self.green_limit_input = TabTextInput(multiline=False, size_hint=(None, None), size=(dp(110), dp(28)), halign="right",
                                               input_filter='int')
         self.horizonatl_layout1.add_widget(self.green_limit_input)
         self.grid.add_widget(self.horizonatl_layout1)
 
-        self.grid.add_widget(Label(size_hint=(None, None), size=(160, 40)))
-        self.horizonatl_layout2 = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=40)
-        self.horizonatl_layout2.add_widget(Label(text="gelb: ", font_size=18, size_hint=(None, None), size=(40, 35), 
-                                                 text_size=(40, 35), halign="left", valign="middle"))
-        self.yellow_limit_input = TabTextInput(multiline=False, size_hint=(None, None), size=(150, 35), halign="right",
-                                               input_filter='int')
-        self.horizonatl_layout2.add_widget(self.yellow_limit_input)
-        self.grid.add_widget(self.horizonatl_layout2)
-
-        self.grid.add_widget(Label(size_hint=(None, None), size=(160, 40)))
-        self.horizonatl_layout3 = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=40)
-        self.horizonatl_layout3.add_widget(Label(text="rot: ", font_size=18, size_hint=(None, None), size=(40, 35), 
-                                                 text_size=(40, 35), halign="left", valign="middle"))
-        self.red_limit_input = TabTextInput(multiline=False, size_hint=(None, None), size=(150, 35), halign="right",
+        self.grid.add_widget(Label(size_hint=(None, None), size=(dp(128), dp(32))))
+        self.horizonatl_layout3 = BoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(32))
+        self.horizonatl_layout3.add_widget(Label(text="rot: ", font_size=sp(15), size_hint=(None, None), size=(dp(35), dp(28)), 
+                                                 text_size=(dp(35), dp(28)), halign="left", valign="middle"))
+        self.red_limit_input = TabTextInput(multiline=False, size_hint=(None, None), size=(dp(110), dp(28)), halign="right",
                                             input_filter='int')
         self.horizonatl_layout3.add_widget(self.red_limit_input)
         self.grid.add_widget(self.horizonatl_layout3)
 
         left_card.add_widget(self.grid)
+
+        self.save_settings_button = Button(text="Änderungen speichern", size_hint=(None, None), 
+                                             size=(dp(300), dp(32)))
+        left_card.add_widget(self.save_settings_button)
+
         self.settings_layout_left.add_widget(left_card)
         self.settings_horizontal_layout.add_widget(self.settings_layout_left)
         self.settings_horizontal_layout.add_widget(self.settings_layout)
@@ -815,7 +814,7 @@ class MainView(Screen):
         self.layout.add_widget(self.settings_tab)
 
     def show_messagebox(self, title, message):
-        layout = BoxLayout(orientation="vertical", padding=10, spacing=15)
+        layout = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(12))
 
         # Label mit Umbruch
         message_label = Label(
@@ -823,27 +822,27 @@ class MainView(Screen):
             halign="left",
             valign="middle",
             size_hint=(1, None),
-            text_size=(350, None)
+            text_size=(dp(430), None)
         )
         message_label.bind(
             texture_size=lambda instance, value: setattr(instance, 'height', value[1])
         )
         layout.add_widget(message_label)
 
-        close_button = Button(text="OK", size_hint_y=None, height=40)
+        close_button = Button(text="OK", size_hint_y=None, height=dp(32))
         layout.add_widget(close_button)
 
         popup = Popup(
             title=title,
             content=layout,
             size_hint=(None, None),
-            size=(400, 200),
+            size=(dp(470), dp(160)),
             auto_dismiss=False
         )
 
         def adjust_popup_height(*args):
             # Höhe anpassen
-            popup.height = message_label.height + 150
+            popup.height = message_label.height + dp(120)
 
         message_label.bind(height=adjust_popup_height)
 
@@ -857,8 +856,7 @@ class MainView(Screen):
         Konfiguriert die Tab-Navigation zwischen den Eingabefeldern.
         """
         self.day_off_input.focus_next = self.green_limit_input
-        self.green_limit_input.focus_next = self.yellow_limit_input
-        self.yellow_limit_input.focus_next = self.red_limit_input
+        self.green_limit_input.focus_next = self.red_limit_input
         self.red_limit_input.focus_next = self.new_password_input
         self.new_password_input.focus_next = self.repeat_password_input
         self.repeat_password_input.focus_next = self.day_off_input
@@ -886,19 +884,19 @@ class TrafficLight(BoxLayout):
         self.orientation = "vertical"
         self.pos_hint = {"top": 1}
         self.size_hint = (None, None)
-        self.size = (60, 160)
+        self.size = (dp(48), dp(128))
 
         # Ampel-Kreise
         with self.canvas:
             # Rot
             color_red = Color(0.3, 0.3, 0.3)
-            ellipse_red = Ellipse(pos=(self.x, self.y + 100), size=(40, 40))
+            ellipse_red = Ellipse(pos=(self.x, self.y + dp(80)), size=(dp(32), dp(32)))
             # Gelb
             color_yellow = Color(0.3, 0.3, 0.3)
-            ellipse_yellow = Ellipse(pos=(self.x, self.y + 50), size=(40, 40))
+            ellipse_yellow = Ellipse(pos=(self.x, self.y + dp(40)), size=(dp(32), dp(32)))
             # Grün
             color_green = Color(0.3, 0.3, 0.3)
-            ellipse_green = Ellipse(pos=(self.x, self.y), size=(40, 40))
+            ellipse_green = Ellipse(pos=(self.x, self.y), size=(dp(32), dp(32)))
 
         self.lights = {
             "red": (color_red, ellipse_red),
@@ -919,7 +917,7 @@ class TrafficLight(BoxLayout):
         """
         
         for i, color in enumerate(["green", "yellow", "red"]):
-            self.lights[color][1].pos = (self.x, self.y + i * 50)
+            self.lights[color][1].pos = (self.x, self.y + i * dp(40))
 
     def set_state(self, state):
         """
@@ -982,17 +980,17 @@ class MonthCalendar(BoxLayout):
         self.clear_widgets()
 
         # Auswahl, welcher Mitarbeiter-Kalender angezeigt werden soll
-        calendar_choice = BoxLayout(orientation="horizontal", size_hint_y=None, height=50, padding=10)
-        calendar_choice.add_widget(Label(text="Kalenderansicht:", size_hint=(None, None), size=(150, 30), 
-                                   text_size=(150, 30), halign="left", valign="middle"))
-        self.employee_spinner = Spinner(size_hint=(None, None), size=(200, 30))
+        calendar_choice = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(40), padding=dp(8))
+        calendar_choice.add_widget(Label(text="Kalenderansicht:", size_hint=(None, None), size=(dp(120), dp(24)), 
+                                   text_size=(dp(120), dp(24)), halign="left", valign="middle"))
+        self.employee_spinner = Spinner(size_hint=(None, None), size=(dp(160), dp(24)))
         calendar_choice.add_widget(self.employee_spinner)
         self.add_widget(calendar_choice)
 
         # Header für den Kalender
-        header = BoxLayout(size_hint_y=None, height=30)
-        self.prev_btn = Button(text="<<", size_hint_x=None, width=60)
-        self.next_btn = Button(text=">>", size_hint_x=None, width=60)
+        header = BoxLayout(size_hint_y=None, height=dp(24))
+        self.prev_btn = Button(text="<<", size_hint_x=None, width=dp(48))
+        self.next_btn = Button(text=">>", size_hint_x=None, width=dp(48))
         self.title_label = Label(text=self.title_text())
         header.add_widget(self.prev_btn)
         header.add_widget(self.title_label)
@@ -1001,33 +999,33 @@ class MonthCalendar(BoxLayout):
 
         # Wochentage
         weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-        weekday_row = GridLayout(cols=7, padding=(0, 10, 0, 0), size_hint_y=None, height=30)
+        weekday_row = GridLayout(cols=7, padding=(dp(0), dp(8), dp(0), dp(0)), size_hint_y=None, height=dp(24))
         for weekday in weekdays:
             weekday_row.add_widget(Label(text=weekday, color=(1, 1, 1, 1)))
         self.add_widget(weekday_row)
 
         # Grid für Kalender
-        self.grid = GridLayout(cols=7, padding=(0, 10, 0, 0))
+        self.grid = GridLayout(cols=7, padding=(dp(0), dp(8), dp(0), dp(0)))
         self.add_widget(self.grid)
 
         self.fill_grid_with_days()
 
         # Tabelle für die Anzeige der gestempelten Zeiten
-        self.detail_table = LinedGridLayout(cols=3, size_hint_y=None, height=150, padding=10, spacing=10)
+        self.detail_table = LinedGridLayout(cols=3, size_hint_y=None, height=dp(120), padding=dp(8), spacing=dp(8))
 
         # Überschriften
         self.detail_table.add_widget(self.aligned_label(text="Datum", bold=True, color=(0, 0, 0, 1), 
-                                                        size_hint_y=None, height=20, halign="left", valign="top"))
+                                                        size_hint_y=None, height=dp(16), halign="left", valign="top"))
         self.detail_table.add_widget(self.aligned_label(text="Zeiten", bold=True, color=(0, 0, 0, 1), 
-                                                        size_hint_y=None, height=20, halign="left", valign="top"))
+                                                        size_hint_y=None, height=dp(16), halign="left", valign="top"))
         self.detail_table.add_widget(self.aligned_label(text="Gleitzeit", bold=True, color=(0, 0, 0, 1), 
-                                                        size_hint_y=None, height=20, halign="left", valign="top"))
+                                                        size_hint_y=None, height=dp(16), halign="left", valign="top"))
 
         # Inhalte
         self.date_label = self.aligned_label(text="", color=(0, 0, 0, 1), halign="left", valign="top")
 
-        self.times_scroll = ScrollView(size_hint=(1, 1), bar_width=10, bar_color=(0.7, 0.7, 0.7, 1))
-        self.times_box = GridLayout(cols=1, size_hint_y=None, spacing=5)
+        self.times_scroll = ScrollView(size_hint=(1, 1), bar_width=dp(8), bar_color=(0.7, 0.7, 0.7, 1))
+        self.times_box = GridLayout(cols=1, size_hint_y=None, spacing=dp(4))
         self.times_box.bind(minimum_height=self.times_box.setter("height"))
         self.times_scroll.add_widget(self.times_box)
 
@@ -1130,7 +1128,7 @@ class MonthCalendar(BoxLayout):
         """
 
         # Layout für eine Zeile (Zeit + Button)
-        row_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=30, spacing=10)
+        row_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(24), spacing=dp(8))
 
 
         if is_problematic:
@@ -1161,7 +1159,7 @@ class MonthCalendar(BoxLayout):
             theme_text_color="Custom",
             text_color=(0, 0, 0, 1)
         )
-        edit_wrapper = AnchorLayout(size_hint_x=None, width=50)
+        edit_wrapper = AnchorLayout(size_hint_x=None, width=dp(40))
         edit_wrapper.add_widget(self.edit_button)
 
 
@@ -1172,7 +1170,7 @@ class MonthCalendar(BoxLayout):
             text_color=(0, 0, 0, 1)
         )
 
-        delete_wrapper = AnchorLayout(size_hint_x=None, width=50)
+        delete_wrapper = AnchorLayout(size_hint_x=None, width=dp(40))
         delete_wrapper.add_widget(self.delete_button)
 
         row_layout.add_widget(times_label)
@@ -1194,23 +1192,23 @@ class MonthCalendar(BoxLayout):
             self: Popup-Instanz für weitere Konfiguration
         """
 
-        popup_layout = BoxLayout(orientation="vertical", padding=10, spacing=20)
+        popup_layout = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(16))
 
         # Header
-        header_row = BoxLayout(size_hint_y=None, height=40, spacing=15)
-        header_row.add_widget(Label(text="Zeitstempel:", size_hint=(None, None), size=(100, 35), 
-                                    text_size=(100, 35), halign="left", valign="middle"))
-        self.time_input = TextInput(text=time, multiline=False, size_hint=(None, None), size=(80, 35), readonly=True)
+        header_row = BoxLayout(size_hint_y=None, height=dp(32), spacing=dp(12))
+        header_row.add_widget(Label(text="Zeitstempel:", size_hint=(None, None), size=(dp(80), dp(28)), 
+                                    text_size=(dp(80), dp(28)), halign="left", valign="middle"))
+        self.time_input = TextInput(text=time, multiline=False, size_hint=(None, None), size=(dp(64), dp(28)), readonly=True)
         self.time_input.bind(focus=self.controller.show_time_picker)
         header_row.add_widget(self.time_input)
         popup_layout.add_widget(header_row)
 
         # Speichern-Button
-        self.save_btn = Button(text="Speichern", size_hint_y=None, height=40)
+        self.save_btn = Button(text="Speichern", size_hint_y=None, height=dp(32))
         popup_layout.add_widget(self.save_btn)
 
         # Popup erstellen und öffnen
-        popup = Popup(title=f"{date}", content=popup_layout, size_hint=(None, None), size=(250, 200))
+        popup = Popup(title=f"{date}", content=popup_layout, size_hint=(None, None), size=(dp(200), dp(160)))
         popup.open()
 
         self.current_popup = self
@@ -1277,7 +1275,7 @@ class LinedGridLayout(GridLayout):
 
             if len(self.children) >= self.cols:
                 first_row_widgets = self.children[-self.cols:]
-                y = min(widget.y for widget in first_row_widgets) - 5
+                y = min(widget.y for widget in first_row_widgets) - dp(4)
                 Line(points=[self.x, y, self.x + self.width, y])
 
 
@@ -1302,9 +1300,9 @@ class DayCell(BoxLayout):
             in_month (bool): True wenn Tag im aktuellen Monat, False für Nachbar-Monate
         """
 
-        super().__init__(orientation="vertical", padding=2, spacing=2)
+        super().__init__(orientation="vertical", padding=dp(1.6), spacing=dp(1.6))
         self.size_hint_y = None
-        self.height = 80
+        self.height = dp(64)
 
         if is_weekend:
             bg_color = (0.9, 0.9, 0.9, 1)
@@ -1318,7 +1316,7 @@ class DayCell(BoxLayout):
             Color(*bg_color)
             self.rect = Rectangle(size=self.size, pos=self.pos)
             Color(0.7, 0.7, 0.7, 1)
-            self.line = Line(rectangle=(self.x, self.y, self.width, self.height), width=1)
+            self.line = Line(rectangle=(self.x, self.y, self.width, self.height), width=dp(0.8))
 
         self.bind(size=self._update_graphics, pos=self._update_graphics)
 
@@ -1328,19 +1326,24 @@ class DayCell(BoxLayout):
         else:
             color = (0.7, 0.7, 0.7, 1)
 
+        day_container = FloatLayout(size_hint_y=None, height=dp(64))
+
         day_label = Label(
             text=str(day_number),
             halign="right",
             valign="top",
             color=color,
-            size_hint_y=None,
-            padding=(10, 30)
+            size_hint=(None, None),
+            size=(dp(35), dp(40))
         )
         day_label.bind(size=day_label.setter("text_size"))
-        self.add_widget(day_label)
+        day_label.pos_hint = {"right": 1, "top": 1}
+
+        day_container.add_widget(day_label)
+        self.add_widget(day_container)
 
         # Bereich für Einträge
-        self.entries_box = BoxLayout(orientation="vertical", spacing=1)
+        self.entries_box = BoxLayout(orientation="vertical", spacing=dp(0.8))
         self.add_widget(self.entries_box)
 
     def _update_graphics(self, *args):
@@ -1367,7 +1370,7 @@ class DayCell(BoxLayout):
             text=entry_text,
             color=(0, 0, 0, 1),
             size_hint_y=None,
-            height=20
+            height=dp(16)
         )
         with lbl.canvas.before:
             lbl.bg_color = Color(*color)
@@ -1457,7 +1460,7 @@ class BorderedLabel(Label):
         # Rand
         with self.canvas.after:
             self.border_color = Color(0.5, 0.5, 0.5, 1)
-            self.border_line = Line(rectangle=(self.x, self.y, self.width, self.height), width=1)
+            self.border_line = Line(rectangle=(self.x, self.y, self.width, self.height), width=dp(0.8))
 
         # Aktualisieren, wenn sich etwas ändert
         self.bind(pos=self.update_graphics, size=self.update_graphics)
