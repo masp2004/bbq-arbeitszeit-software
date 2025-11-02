@@ -160,6 +160,8 @@ class Controller():
 
     def update_view_time_tracking(self):
         # ... (Inhalt bleibt gleich) ...
+        self.main_view.welcome_label.text = f"Willkommen zurück, {self.model_login.anmeldung_name}!"
+
         # Gleitzeit in Stunden und Minuten umwandeln
         gleitzeit_stunden = self.model_track_time.aktueller_nutzer_gleitzeit or 0
         stunden = int(gleitzeit_stunden)

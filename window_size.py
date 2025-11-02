@@ -72,5 +72,5 @@ def set_fixed_window_size(size):
         if (int(width), int(height)) != _fixed_size:
             Clock.schedule_once(lambda dt: setattr(Window, "size", _fixed_size), 0)
         
-        _enforce_handler = _enforce
-        Window.bind(on_resize=_enforce_handler)
+    _enforce_handler = _enforce
+    Window.bind(on_resize=_enforce_handler)
