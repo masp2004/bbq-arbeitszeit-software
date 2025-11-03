@@ -335,6 +335,7 @@ class MainView(Screen):
             **kwargs: Keyword-Argumente für Screen
         """
         super().__init__(**kwargs)
+        self.register_event_type('on_settings_value_selected')
         self.layout = TabbedPanel(do_default_tab=False, tab_width=dp(136))
         self.date_picker = MDDatePicker()
         self.time_picker = MDTimePicker()
@@ -554,7 +555,7 @@ class MainView(Screen):
         
         self.eintrag_art_spinner = Spinner(
             text="Bitte wählen",
-            values=("Zeitstempel", "Urlaub", "Krank"),
+            values=("Zeitstempel", "Urlaub", "Krankheit"), # muss krankheit heisen, das der Kontroller die EIntragsart erkennt
             size_hint=(None, None),
             size=(dp(129), dp(32))
         )
@@ -697,14 +698,21 @@ class MainView(Screen):
         Ermöglicht Passwortänderung und Anpassung von Einstellungen
         wie Wochenstunden und Ampel-Grenzwerte.
         """
-
         self.settings_tab = TabbedPanelItem(text="Einstellungen")
 
-        self.settings_horizontal_layout = BoxLayout(orientation='horizontal')
+        self.settings_horizontal_layout = BoxLayout(
+            orientation='horizontal',
+            spacing=dp(24),
+            padding=dp(16)
+        )
 
         # Passwort ändern Layout
-        self.settings_layout = BoxLayout(orientation='vertical', padding=dp(16), spacing=dp(12), 
-                                         size_hint=(0.55, None))
+        self.settings_layout = BoxLayout(
+            orientation='vertical',
+            padding=dp(16),
+            spacing=dp(12),
+            size_hint=(0.55, None)
+        )
         self.settings_layout.bind(minimum_height=self.settings_layout.setter('height'))
         self.settings_layout.pos_hint = {"top": 1}
 
@@ -718,7 +726,7 @@ class MainView(Screen):
         )
         password_label.bind(size=password_label.setter('text_size'))
         self.settings_layout.add_widget(password_label)
-        
+
         right_card = MDCard(
             orientation="vertical",
             padding=dp(20),
@@ -729,24 +737,51 @@ class MainView(Screen):
             radius=[10, 10, 10, 10]
         )
 
-        self.new_password_input = TabTextInput(password=True, hint_text="Neues Passwort", 
-                                            size_hint=(None, None), size=(dp(240), dp(28)))
+        self.new_password_input = TabTextInput(
+            password=True,
+            hint_text="Neues Passwort",
+            size_hint=(None, None),
+            size=(dp(240), dp(28))
+        )
         right_card.add_widget(self.new_password_input)
-        self.repeat_password_input = TabTextInput(password=True, hint_text="Neues Passwort wiederholen", 
-                                               size_hint=(None, None), size=(dp(240), dp(28)))
+
+        self.repeat_password_input = TabTextInput(
+            password=True,
+            hint_text="Neues Passwort wiederholen",
+            size_hint=(None, None),
+            size=(dp(240), dp(28))
+        )
         right_card.add_widget(self.repeat_password_input)
-        self.change_password_button = Button(text="Passwort ändern", size_hint=(None, None), 
-                                             size=(dp(240), dp(32)))
-        self.change_password_feedback = Label(text="", size_hint=(None, None), size=(dp(400), dp(48)),
-                        text_size=(dp(400), None), halign="left", valign="middle")
+
+        self.change_password_button = Button(
+            text="Passwort ändern",
+            size_hint=(None, None),
+            size=(dp(240), dp(32))
+        )
         right_card.add_widget(self.change_password_button)
+
         self.settings_layout.add_widget(right_card)
+
+        self.change_password_feedback = Label(
+            text="",
+            size_hint=(None, None),
+            size=(dp(400), dp(48)),
+            text_size=(dp(400), None),
+            halign="left",
+            valign="middle"
+        )
         self.settings_layout.add_widget(self.change_password_feedback)
 
         # Allgemeine Einstellungen Layout
-        self.settings_layout_left = BoxLayout(orientation='vertical', padding=dp(16), spacing=dp(12), 
-                                             size_hint=(0.45, None))
-        self.settings_layout_left.bind(minimum_height=self.settings_layout_left.setter('height'))
+        self.settings_layout_left = BoxLayout(
+            orientation='vertical',
+            padding=dp(16),
+            spacing=dp(16),
+            size_hint=(0.45, None)
+        )
+        self.settings_layout_left.bind(
+            minimum_height=self.settings_layout_left.setter('height')
+        )
         self.settings_layout_left.pos_hint = {"top": 1}
 
         settings_label = Label(
@@ -763,53 +798,94 @@ class MainView(Screen):
         left_card = MDCard(
             orientation="vertical",
             padding=dp(20),
-            size_hint=(None, None),
-            size=(dp(340), dp(248)),
+            spacing=dp(16),
+            size_hint=(1, None),
             md_bg_color=(0.25, 0.25, 0.25, 1),
             radius=[10, 10, 10, 10]
         )
+        left_card.bind(minimum_height=left_card.setter('height'))
 
-        self.grid = GridLayout(cols=2, spacing=dp(12), size_hint=(0.5, 1))
-        self.grid.bind(minimum_height=self.grid.setter('height'))
-        
-        self.grid.add_widget(Label(text="Stundenwoche: ", font_size=sp(15), size_hint=(None, None), 
-                                   size=(dp(135), dp(32)), text_size=(dp(135), dp(32)), halign="left", valign="middle"))
-        self.grid.add_widget(Spinner(text="Bitte wählen", values=("30 Stunden", "35 Stunden", "40 Stunden"), 
-                                     size_hint=(None, None), size=(dp(153), dp(32))))
-        self.grid.add_widget(Label(text="Anzahl Urlaubstage: ", font_size=sp(15), size_hint=(None, None), 
-                                   size=(dp(135), dp(28)), text_size=(dp(135), dp(28)), halign="left", valign="middle"))
-        self.day_off_input = TabTextInput(multiline=False, size_hint=(None, None), size=(dp(153), dp(28)), halign="right",
-                                          input_filter='int')
-        self.grid.add_widget(self.day_off_input)
+        info_grid = GridLayout(cols=1, spacing=dp(12), size_hint=(1, None), width=dp(320))
+        info_grid.bind(minimum_height=info_grid.setter('height'))
 
-        self.grid.add_widget(Label(text="Grenzwerte: ", font_size=sp(15), size_hint=(None, None), size=(dp(135), dp(28)), 
-                                   text_size=(dp(135), dp(28)), halign="left", valign="middle"))
-        self.horizonatl_layout1 = BoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(32))
-        self.horizonatl_layout1.add_widget(Label(text="grün: ", font_size=sp(15), size_hint=(None, None), size=(dp(35), dp(28)), 
-                                                 text_size=(dp(35), dp(28)), halign="left", valign="middle"))
-        self.green_limit_input = TabTextInput(multiline=False, size_hint=(None, None), size=(dp(110), dp(28)), halign="right",
-                                              input_filter='int')
-        self.horizonatl_layout1.add_widget(self.green_limit_input)
-        self.grid.add_widget(self.horizonatl_layout1)
+        def _info_row(caption, value, button_text=None, button_attr=None):
+            row = BoxLayout(
+                orientation='horizontal',
+                size_hint_y=None,
+                height=dp(32),
+                spacing=dp(8)
+            )
+            caption_lbl = Label(
+                text=caption,
+                size_hint=(0.6, 1),
+                halign="left",
+                valign="middle",
+                text_size=(None, dp(32)),
+                font_size=sp(14)
+            )
+            caption_lbl.bind(
+                size=lambda inst, _: setattr(inst, 'text_size', (inst.width, dp(32)))
+            )
+            value_lbl = Label(
+                text=value,
+                size_hint=(0.25, 1),
+                halign="left",
+                valign="middle",
+                text_size=(None, dp(32)),
+                font_size=sp(14)
+            )
+            value_lbl.bind(
+                size=lambda inst, _: setattr(inst, 'text_size', (inst.width, dp(32)))
+            )
+            row.add_widget(caption_lbl)
+            row.add_widget(value_lbl)
+            if button_text:
+                btn = MDIconButton(
+                    icon="pencil",
+                    theme_text_color="Custom",
+                    text_color=(1, 1, 1, 1)
+                )
+                setattr(self, button_attr, btn)
+                btn_container = AnchorLayout(size_hint=(None, 1), width=dp(40))
+                btn_container.add_widget(btn)
+                row.add_widget(btn_container)
+            return row, value_lbl
 
-        self.grid.add_widget(Label(size_hint=(None, None), size=(dp(128), dp(32))))
-        self.horizonatl_layout3 = BoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(32))
-        self.horizonatl_layout3.add_widget(Label(text="rot: ", font_size=sp(15), size_hint=(None, None), size=(dp(35), dp(28)), 
-                                                 text_size=(dp(35), dp(28)), halign="left", valign="middle"))
-        self.red_limit_input = TabTextInput(multiline=False, size_hint=(None, None), size=(dp(110), dp(28)), halign="right",
-                                            input_filter='int')
-        self.horizonatl_layout3.add_widget(self.red_limit_input)
-        self.grid.add_widget(self.horizonatl_layout3)
+        self.name_row, self.name_value_label = _info_row("Name:", "")
+        info_grid.add_widget(self.name_row)
 
-        left_card.add_widget(self.grid)
+        self.birth_row, self.birth_value_label = _info_row("Geburtsdatum:", "")
+        info_grid.add_widget(self.birth_row)
 
-        self.save_settings_button = Button(text="Änderungen speichern", size_hint=(None, None), 
-                                             size=(dp(300), dp(32)))
+        self.week_hours_row, self.week_hours_value_label = _info_row(
+            "Vertragliche Wochenstunden:", "", button_text="Bearbeiten", button_attr="edit_week_hours_button"
+        )
+        info_grid.add_widget(self.week_hours_row)
+
+        self.green_limit_row, self.green_limit_value_label = _info_row(
+            "Ampel grün (h):", "", button_text="Bearbeiten", button_attr="edit_green_limit_button"
+        )
+        info_grid.add_widget(self.green_limit_row)
+
+        self.red_limit_row, self.red_limit_value_label = _info_row(
+            "Ampel rot (h):", "", button_text="Bearbeiten", button_attr="edit_red_limit_button"
+        )
+        info_grid.add_widget(self.red_limit_row)
+
+        left_card.add_widget(info_grid)
+
+        self.save_settings_button = Button(
+            text="Änderungen speichern",
+            size_hint=(1, None),
+            height=dp(32)
+        )
         left_card.add_widget(self.save_settings_button)
 
         self.settings_layout_left.add_widget(left_card)
+
         self.settings_horizontal_layout.add_widget(self.settings_layout_left)
         self.settings_horizontal_layout.add_widget(self.settings_layout)
+
         self.settings_tab.add_widget(self.settings_horizontal_layout)
         self.layout.add_widget(self.settings_tab)
 
@@ -849,17 +925,114 @@ class MainView(Screen):
         close_button.bind(on_release=popup.dismiss)
         popup.open()
 
+    def open_settings_edit_popup(self, field_label, current_value="", label_attr=None):
+        """Zeigt ein Bearbeitungs-Popup für Einstellungen an."""
+
+        popup_layout = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(12))
+
+        headline = Label(
+            text=f"{field_label}",
+            size_hint_y=None,
+            height=dp(24),
+            halign="left",
+            valign="middle"
+        )
+        headline.bind(size=headline.setter("text_size"))
+        popup_layout.add_widget(headline)
+
+        selection_widget = None
+        if label_attr == "week_hours_value_label":
+            cleaned_value = str(current_value).strip() if current_value is not None else ""
+            if cleaned_value.endswith("h"):
+                cleaned_value = cleaned_value[:-1].strip()
+            if cleaned_value not in {"30", "35", "40"}:
+                cleaned_value = "40"
+            selection_widget = Spinner(
+                text=cleaned_value,
+                values=("30", "35", "40"),
+                size_hint_y=None,
+                height=dp(32)
+            )
+        elif label_attr in {"green_limit_value_label", "red_limit_value_label"}:
+            cleaned_value = str(current_value).strip() if current_value is not None else ""
+            if cleaned_value.endswith("h"):
+                cleaned_value = cleaned_value[:-1].strip()
+            selection_widget = TabTextInput(
+                text=cleaned_value,
+                multiline=False,
+                size_hint_y=None,
+                height=dp(32),
+                input_filter="int"
+            )
+        else:
+            selection_widget = TabTextInput(
+                text=str(current_value) if current_value is not None else "",
+                multiline=False,
+                size_hint_y=None,
+                height=dp(32)
+            )
+
+        popup_layout.add_widget(selection_widget)
+
+        button_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(32), spacing=dp(12))
+        cancel_btn = Button(text="Abbrechen")
+        save_btn = Button(text="Übernehmen")
+        button_row.add_widget(cancel_btn)
+        button_row.add_widget(save_btn)
+        popup_layout.add_widget(button_row)
+
+        popup = Popup(
+            title="Wert bearbeiten",
+            content=popup_layout,
+            size_hint=(None, None),
+            size=(dp(320), dp(200)),
+            auto_dismiss=False
+        )
+
+        cancel_btn.bind(on_release=popup.dismiss)
+
+        def _save_and_dispatch(*_):
+            new_value = selection_widget.text.strip() if hasattr(selection_widget, 'text') and selection_widget.text else ""
+            self.dispatch('on_settings_value_selected', field_label, new_value, label_attr)
+            popup.dismiss()
+
+        save_btn.bind(on_release=_save_and_dispatch)
+
+        popup.open()
+
+    def on_settings_value_selected(self, field_label, new_value, label_attr):
+        if label_attr and hasattr(self, label_attr):
+            if new_value:
+                if label_attr == "week_hours_value_label":
+                    display_value = f"{new_value} h"
+                elif label_attr in {"green_limit_value_label", "red_limit_value_label"}:
+                    display_value = f"{new_value} h"
+                else:
+                    display_value = new_value
+            else:
+                display_value = new_value
+            getattr(self, label_attr).text = display_value
+
     def on_enter(self):
         """
         Wird aufgerufen, wenn der Main-Screen betreten wird.
         
         Konfiguriert die Tab-Navigation zwischen den Eingabefeldern.
         """
-        self.day_off_input.focus_next = self.green_limit_input
-        self.green_limit_input.focus_next = self.red_limit_input
-        self.red_limit_input.focus_next = self.new_password_input
-        self.new_password_input.focus_next = self.repeat_password_input
-        self.repeat_password_input.focus_next = self.day_off_input
+        focus_chain = [
+            getattr(self, "day_off_input", None),
+            getattr(self, "green_limit_input", None),
+            getattr(self, "red_limit_input", None),
+            getattr(self, "new_password_input", None),
+            getattr(self, "repeat_password_input", None),
+        ]
+
+        widgets = [widget for widget in focus_chain if widget is not None]
+        if len(widgets) < 2:
+            return
+
+        for idx, widget in enumerate(widgets):
+            widget.focus_next = widgets[(idx + 1) % len(widgets)]
 
 
 class TrafficLight(BoxLayout):

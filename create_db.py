@@ -36,6 +36,13 @@ cursor.executescript('''
                 datum DATE NOT NULL,
                 typ TEXT CHECK (typ IN ('Urlaub', 'Krankheit', 'Fortbildung', 'Sonstiges')) NOT NULL,
                 genehmigt BOOLEAN NOT NULL DEFAULT 0
+            );
+        CREATE TABLE IF NOT EXISTS wochenstunden_historie (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mitarbeiter_id INTEGER NOT NULL REFERENCES users(mitarbeiter_id),
+                gueltig_ab DATE NOT NULL,
+                wochenstunden INTEGER NOT NULL,
+                UNIQUE (mitarbeiter_id, gueltig_ab)
             );         
                   
     ''')

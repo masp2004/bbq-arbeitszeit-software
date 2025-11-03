@@ -75,6 +75,53 @@ def add_stempel(session, mid, tag, start="08:00", ende="16:00"):
     session.add_all([s1, s2])
     session.commit()
 
+# ============================================================
+#  TESTS: HISTORISCHE WOCHENSTUNDEN
+# ============================================================
+
+def test_wochenstunden_historie_verwendung(model, isolated_db, test_user):
+    """Neuere Arbeitszeit darf ältere Tage nicht beeinflussen und wirkt nur ab Gültigkeitsdatum."""
+    # Ausgangslage: 40h/Woche (8h täglich) bereits historisiert
+    start_hist = date.today() - timedelta(days=30)
+    isolated_db.add(
+        modell.VertragswochenstundenHistorie(
+            mitarbeiter_id=test_user.mitarbeiter_id,
+            gueltig_ab=start_hist,
+            wochenstunden=40,
+        )
+    )
+    isolated_db.commit()
+
+    change_date = date.today() - timedelta(days=1)
+    result = model.aktualisiere_vertragliche_wochenstunden(30, gueltig_ab=change_date)
+    assert result["neue_wochenstunden"] == 30
+
+    # Nachträglicher Stempel für einen Tag VOR der Änderung → muss noch mit 8h Sollzeit laufen
+    tag_alt = change_date - timedelta(days=1)
+    add_stempel(isolated_db, test_user.mitarbeiter_id, tag_alt, "08:00", "16:30")
+
+    # Stempel NACH der Änderung → soll die neue 6h-Sollzeit verwenden
+    tag_neu = change_date + timedelta(days=1)
+    add_stempel(isolated_db, test_user.mitarbeiter_id, tag_neu, "08:00", "16:30")
+
+    model.berechne_gleitzeit()
+    isolated_db.refresh(test_user)
+
+    # Vor der Änderung: 8h gearbeitet -> 0h Gleitzeit; nach der Änderung: 8h gearbeitet -> +2h Gleitzeit
+    assert test_user.gleitzeit == pytest.approx(2.0, abs=0.05)
+
+    # Alle Stempel wurden validiert und Historie enthält beide Stände
+    alle_stempel = isolated_db.query(modell.Zeiteintrag).filter_by(mitarbeiter_id=test_user.mitarbeiter_id).all()
+    assert all(e.validiert for e in alle_stempel)
+
+    historie = (
+        isolated_db.query(modell.VertragswochenstundenHistorie)
+        .filter_by(mitarbeiter_id=test_user.mitarbeiter_id)
+        .order_by(modell.VertragswochenstundenHistorie.gueltig_ab)
+        .all()
+    )
+    assert [h.wochenstunden for h in historie] == [40, 30]
+
 
 # ============================================================
 #  TESTS: STANDARDFUNKTIONEN

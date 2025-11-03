@@ -62,7 +62,29 @@ class Controller():
             self._bind_safe(self.main_view.month_calendar.prev_btn, 'on_release', self.prev_button_clicked)
             self._bind_safe(self.main_view.month_calendar.next_btn, 'on_release', self.next_button_clicked)
 
+            self._bind_safe(
+                self.main_view.edit_week_hours_button,
+                'on_release',
+                lambda *_: self.on_settings_edit_button("Vertragliche Wochenstunden", "week_hours_value_label")
+            )
+            self._bind_safe(
+                self.main_view.edit_green_limit_button,
+                'on_release',
+                lambda *_: self.on_settings_edit_button("Ampel grün (h)", "green_limit_value_label")
+            )
+            self._bind_safe(
+                self.main_view.edit_red_limit_button,
+                'on_release',
+                lambda *_: self.on_settings_edit_button("Ampel rot (h)", "red_limit_value_label")
+            )
+            self._bind_safe(
+                self.main_view.save_settings_button,
+                'on_release',
+                self.save_settings_button_clicked
+            )
+
             self.main_view.month_calendar.day_selected_callback = self.day_selected
+            self.main_view.bind(on_settings_value_selected=self.on_settings_value_selected)
             
             # Controller-Referenz im MonthCalendar setzen für Edit/Delete-Callbacks
             self.main_view.month_calendar.controller = self
@@ -96,6 +118,75 @@ class Controller():
                     self.main_view.show_messagebox("Unerwarteter Fehler", f"Ein Fehler ist aufgetreten:\n{e}")
 
         widget.bind(**{event: safe_callback})
+
+    def on_settings_edit_button(self, field_label, label_attr):
+        current_value = ""
+        if hasattr(self.main_view, label_attr):
+            current_value = getattr(self.main_view, label_attr).text
+        if hasattr(self.main_view, "open_settings_edit_popup"):
+            self.main_view.open_settings_edit_popup(field_label, current_value, label_attr)
+
+    def on_settings_value_selected(self, instance, field_label, new_value, label_attr):
+        if hasattr(self.main_view, label_attr):
+            if new_value:
+                if label_attr == "week_hours_value_label":
+                    display_value = f"{new_value} h"
+                elif label_attr in {"green_limit_value_label", "red_limit_value_label"}:
+                    display_value = f"{new_value} h"
+                else:
+                    display_value = new_value
+            else:
+                display_value = new_value
+            getattr(self.main_view, label_attr).text = display_value
+
+    def save_settings_button_clicked(self, *_):
+        if not self.model_track_time or self.model_track_time.aktueller_nutzer_id is None:
+            if hasattr(self.main_view, "show_messagebox"):
+                self.main_view.show_messagebox("Fehler", "Keine Nutzeranmeldung aktiv.")
+            return
+
+        def _extract_numeric(label):
+            text = (label.text if label and label.text else "").strip()
+            if text.endswith("h"):
+                text = text[:-1].strip()
+            return text
+
+        week_hours_text = _extract_numeric(getattr(self.main_view, "week_hours_value_label", None))
+        green_limit_text = _extract_numeric(getattr(self.main_view, "green_limit_value_label", None))
+        red_limit_text = _extract_numeric(getattr(self.main_view, "red_limit_value_label", None))
+
+        try:
+            neue_wochenstunden = int(week_hours_text)
+        except (TypeError, ValueError):
+            if hasattr(self.main_view, "show_messagebox"):
+                self.main_view.show_messagebox("Fehler", "Vertragliche Wochenstunden müssen eine Zahl sein.")
+            return
+
+        try:
+            ampel_gruen = int(green_limit_text)
+            ampel_rot = int(red_limit_text)
+        except (TypeError, ValueError):
+            if hasattr(self.main_view, "show_messagebox"):
+                self.main_view.show_messagebox("Fehler", "Ampelgrenzen müssen ganze Stunden sein.")
+            return
+
+        result_hours = self.model_track_time.aktualisiere_vertragliche_wochenstunden(neue_wochenstunden)
+        if isinstance(result_hours, dict) and result_hours.get("error"):
+            if hasattr(self.main_view, "show_messagebox"):
+                self.main_view.show_messagebox("Fehler", result_hours.get("error"))
+            return
+
+        result_ampel = self.model_track_time.aktualisiere_ampelgrenzen(ampel_gruen, ampel_rot)
+        if isinstance(result_ampel, dict) and result_ampel.get("error"):
+            if hasattr(self.main_view, "show_messagebox"):
+                self.main_view.show_messagebox("Fehler", result_ampel.get("error"))
+            return
+
+        self.model_track_time.set_ampel_farbe()
+        self.update_view_time_tracking()
+
+        if hasattr(self.main_view, "show_messagebox"):
+            self.main_view.show_messagebox("Erfolg", "Einstellungen wurden gespeichert.")
 
     def _format_hours_minutes(self, hours_float):
         """
@@ -172,6 +263,31 @@ class Controller():
         self.main_view.anzeige_gleitzeit_wert_label.text = gleitzeit_str
         self.main_view.nachtrag_feedback.text = self.model_track_time.feedback_manueller_stempel
         self.main_view.change_password_feedback.text =self.model_track_time.feedback_neues_passwort
+
+        if hasattr(self.main_view, "name_value_label"):
+            self.main_view.name_value_label.text = self.model_track_time.aktueller_nutzer_name or ""
+
+        if hasattr(self.main_view, "birth_value_label"):
+            geburtstag = self.model_track_time.aktueller_nutzer_geburtsdatum
+            if isinstance(geburtstag, date):
+                birth_text = geburtstag.strftime("%d.%m.%Y")
+            elif isinstance(geburtstag, str):
+                birth_text = geburtstag
+            else:
+                birth_text = ""
+            self.main_view.birth_value_label.text = birth_text
+
+        if hasattr(self.main_view, "week_hours_value_label"):
+            wochenstunden = self.model_track_time.aktueller_nutzer_vertragliche_wochenstunden
+            self.main_view.week_hours_value_label.text = f"{wochenstunden} h" if wochenstunden is not None else ""
+
+        if hasattr(self.main_view, "green_limit_value_label"):
+            ampel_gruen = self.model_track_time.aktueller_nutzer_ampel_grün
+            self.main_view.green_limit_value_label.text = f"{ampel_gruen} h" if ampel_gruen is not None else ""
+
+        if hasattr(self.main_view, "red_limit_value_label"):
+            ampel_rot = self.model_track_time.aktueller_nutzer_ampel_rot
+            self.main_view.red_limit_value_label.text = f"{ampel_rot} h" if ampel_rot is not None else ""
 
         if self.model_track_time.ampel_status:
             self.main_view.ampel.set_state(state=self.model_track_time.ampel_status)
@@ -308,7 +424,28 @@ class Controller():
         except Exception as e:
             logger.error(f"Fehler bei der Prüfung auf Urlaubstag: {e}", exc_info=True)
 
-        # 2) Sonn-/Feiertagswarnung oder normale Bestätigung
+        # 2) Minderjährige: Prüfung auf 6. Arbeitstag in der Woche
+        try:
+            nutzer = self.model_track_time.get_aktueller_nutzer()
+            if nutzer and nutzer.is_minor_on_date(_date.today()):
+                if self.model_track_time.hat_bereits_5_tage_gearbeitet_in_woche(_date.today()):
+                    self.main_view.show_messagebox(
+                        title="Arbeitszeitschutz-Warnung",
+                        message=(
+                            f"ACHTUNG: Sie haben bereits an 5 Tagen in dieser Woche gearbeitet!\n\n"
+                            f"Nach dem Arbeitszeitschutzgesetz dürfen Minderjährige maximal 5 Tage pro Woche arbeiten.\n\n"
+                            f"Möchten Sie trotzdem fortfahren?"
+                        ),
+                        callback_yes=self._stempel_nach_6_tage_warnung,
+                        callback_no=None,
+                        yes_text="Trotzdem fortfahren",
+                        no_text="Abbrechen",
+                    )
+                    return
+        except Exception as e:
+            logger.error(f"Fehler bei der Prüfung auf 6. Arbeitstag: {e}", exc_info=True)
+
+        # 3) Sonn-/Feiertagswarnung oder normale Bestätigung
         if self.model_track_time.ist_sonn_oder_feiertag(jetzt.date()):
             nachricht = (
                 f"ACHTUNG: Sonn-/Feiertag!\n\nDatum: {datum_str}\nUhrzeit: {uhrzeit_str}\n\n"
@@ -344,6 +481,31 @@ class Controller():
 
         # Danach normal stempeln
         self._stempel_ausfuehren()
+    
+    def _stempel_nach_6_tage_warnung(self):
+        """Führt den Stempel aus, nachdem die 6-Tage-Warnung akzeptiert wurde."""
+        from datetime import datetime, date as _date
+        jetzt = datetime.now()
+        
+        # Jetzt noch die Sonn-/Feiertagsprüfung durchführen
+        if self.model_track_time.ist_sonn_oder_feiertag(jetzt.date()):
+            datum_str = jetzt.strftime("%d.%m.%Y")
+            uhrzeit_str = jetzt.strftime("%H:%M:%S")
+            nachricht = (
+                f"ACHTUNG: Sonn-/Feiertag!\n\nDatum: {datum_str}\nUhrzeit: {uhrzeit_str}\n\n"
+                f"Möchten Sie diesen Stempel hinzufügen?"
+            )
+            self.main_view.show_messagebox(
+                title="Stempel bestätigen",
+                message=nachricht,
+                callback_yes=self._stempel_ausfuehren,
+                callback_no=None,
+                yes_text="OK",
+                no_text="Abbrechen",
+            )
+        else:
+            # Keine weitere Warnung nötig, direkt stempeln
+            self._stempel_ausfuehren()
     
     def _stempel_ausfuehren(self):
         """Führt den eigentlichen Stempelvorgang aus."""
@@ -385,6 +547,29 @@ class Controller():
                         return
                 except Exception as e:
                     logger.error(f"Fehler bei der Urlaubstagsprüfung (Nachtragen): {e}", exc_info=True)
+
+                # Dann Minderjährige: Prüfung auf 6. Arbeitstag
+                try:
+                    from datetime import datetime as _dt
+                    nachtrage_datum_obj = _dt.strptime(self.model_track_time.nachtragen_datum, "%d/%m/%Y").date()
+                    nutzer = self.model_track_time.get_aktueller_nutzer()
+                    if nutzer and nutzer.is_minor_on_date(nachtrage_datum_obj):
+                        if self.model_track_time.hat_bereits_5_tage_gearbeitet_in_woche(nachtrage_datum_obj):
+                            self.main_view.show_messagebox(
+                                title="Arbeitszeitschutz-Warnung",
+                                message=(
+                                    f"ACHTUNG: Es wurden bereits an 5 Tagen in der Woche vom {self.model_track_time.nachtragen_datum} gearbeitet!\n\n"
+                                    f"Nach dem Arbeitszeitschutzgesetz dürfen Minderjährige maximal 5 Tage pro Woche arbeiten.\n\n"
+                                    f"Möchten Sie trotzdem fortfahren?"
+                                ),
+                                callback_yes=self._nachtragen_nach_6_tage_warnung,
+                                callback_no=None,
+                                yes_text="Trotzdem fortfahren",
+                                no_text="Abbrechen",
+                            )
+                            return
+                except Exception as e:
+                    logger.error(f"Fehler bei der 6-Tage-Prüfung (Nachtragen): {e}", exc_info=True)
 
                 # Danach Sonn-/Feiertag prüfen
                 if self.model_track_time.ist_sonn_oder_feiertag(self.model_track_time.nachtragen_datum):
@@ -432,6 +617,24 @@ class Controller():
 
         # PopUp-Warnungen nach einem Nachtrag immer aktualisieren
         self._refresh_popup_warnings()
+
+    def _nachtragen_nach_6_tage_warnung(self):
+        """Führt das Nachtragen aus, nachdem die 6-Tage-Warnung akzeptiert wurde."""
+        # Jetzt noch die Sonn-/Feiertagsprüfung durchführen
+        if self.model_track_time.ist_sonn_oder_feiertag(self.model_track_time.nachtragen_datum):
+            self.main_view.show_messagebox(
+                title="Sonn-/Feiertagswarnung",
+                message=(
+                    f"Sie versuchen an einem Sonntag oder Feiertag ({self.model_track_time.nachtragen_datum}) einen Zeitstempel nachzutragen.\n\nMöchten Sie fortfahren?"
+                ),
+                callback_yes=self._nachtragen_zeitstempel_ausfuehren,
+                callback_no=None,
+                yes_text="Fortfahren",
+                no_text="Abbrechen",
+            )
+        else:
+            # Keine weitere Warnung nötig, direkt nachtragen
+            self._nachtragen_zeitstempel_ausfuehren()
 
     def _urlaub_loeschen_und_nachtragen_zeitstempel(self):
         """Löscht Urlaub am ausgewählten Nachtrags-Datum und trägt dann den Zeitstempel nach."""
@@ -733,6 +936,10 @@ class Controller():
                 self.model_track_time.set_ampel_farbe()
                 self.model_track_time.kummuliere_gleitzeit()
                 # UI auffrischen
+                self.update_view_time_tracking()
+            elif tab_text == "Einstellungen":
+                self.update_model_time_tracking()
+                self.model_track_time.get_user_info()
                 self.update_view_time_tracking()
         except Exception as e:
             logger.error(f"Fehler in on_tab_changed: {e}", exc_info=True)
