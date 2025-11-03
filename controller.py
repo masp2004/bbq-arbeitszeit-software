@@ -8,8 +8,11 @@ from window_size import set_fixed_window_size
 from kivy.clock import Clock
 import time
 import logging
+
 # Logger für dieses Modul
 logger = logging.getLogger(__name__)
+
+
 class Controller():
     def __init__(self):
         try:
@@ -20,6 +23,7 @@ class Controller():
             self.login_view = LoginView(name = "login")
             self.main_view = MainView(name="main")
             self.active_time_input = None
+
             # status für den Timer
             self.timer_event = None
             self.start_time_dt = None
@@ -33,12 +37,14 @@ class Controller():
             self.sm.add_widget(self.login_view)
             self.sm.add_widget(self.main_view)
             self.sm.current = "login"
+
             # === Bindings ===
             # Binden der Funktionen mit Fehlerbehandlung
             self._bind_safe(self.login_view.change_view_registrieren_button, 'on_press', self.change_view_register)
             self._bind_safe(self.register_view.change_view_login_button, 'on_press', self.change_view_login)
             self._bind_safe(self.login_view.login_button, 'on_press', self.einloggen_button_clicked)
             self._bind_safe(self.main_view.change_password_button, 'on_press', self.passwort_ändern_button_clicked)
+
             self._bind_safe(self.register_view.reg_geburtsdatum, 'focus', self.show_date_picker)
             self._bind_safe(self.register_view.date_picker, 'on_save', self.on_date_selected_register)
             self._bind_safe(self.main_view.date_input, 'focus', self.show_date_picker)
@@ -46,11 +52,13 @@ class Controller():
             self._bind_safe(self.main_view.time_input, 'focus', self.show_time_picker)
             self._bind_safe(self.main_view.time_picker, 'on_save', self.on_time_selected)
             self._bind_safe(self.main_view.checkbox, 'active', self.on_checkbox_changed)
+
             self._bind_safe(self.main_view.eintrag_art_spinner, 'text', self.on_eintrag_art_selected)
             self._bind_safe(self.main_view.month_calendar.employee_spinner, 'text', self.on_employee_selected)
             self._bind_safe(self.register_view.register_button, 'on_press', self.registrieren_button_clicked)
             self._bind_safe(self.main_view.stempel_button, 'on_press', self.stempel_button_clicked)
             self._bind_safe(self.main_view.nachtragen_button, 'on_press', self.nachtragen_button_clicked)
+
             self._bind_safe(self.main_view.month_calendar.prev_btn, 'on_release', self.prev_button_clicked)
             self._bind_safe(self.main_view.month_calendar.next_btn, 'on_release', self.next_button_clicked)
 
@@ -77,7 +85,7 @@ class Controller():
 
             self.main_view.month_calendar.day_selected_callback = self.day_selected
             self.main_view.bind(on_settings_value_selected=self.on_settings_value_selected)
-
+            
             # Controller-Referenz im MonthCalendar setzen für Edit/Delete-Callbacks
             self.main_view.month_calendar.controller = self
             
@@ -88,10 +96,12 @@ class Controller():
                 logger.error(f"Konnte Tab-Wechsel nicht binden: {e}")
             
             logger.debug("Controller initialisiert und alle Widgets gebunden.")
+
         except Exception as e:
             logger.critical(f"Kritischer Fehler während der Controller-Initialisierung: {e}", exc_info=True)
             # Dieser Fehler muss nach oben weitergegeben werden, siehe main.py
             raise
+
     def _bind_safe(self, widget, event, callback):
         """
         Hilfsmethode, um Callbacks sicher zu binden.
@@ -196,15 +206,18 @@ class Controller():
         vorzeichen = "-" if hours_float < 0 else ""
         
         return f"{vorzeichen}{abs(stunden)}h {minuten}min"
+
     def _can_edit_selected_employee(self):
         """Gibt True zurück, wenn der aktuell ausgewählte Kalender dem eingeloggten Nutzer entspricht."""
         model = self.model_track_time
         if not model:
             return False
+
         selected_id = getattr(model, "aktuelle_kalendereinträge_für_id", None)
         if selected_id in (None, model.aktueller_nutzer_id):
             return True
         return False
+
     #updates (Diese sind meist unkritisch, da sie nur Daten kopieren)
     def update_model_login(self):
         # ... (Inhalt bleibt gleich) ...
@@ -218,10 +231,12 @@ class Controller():
         self.model_login.neuer_nutzer_rot = self.register_view.reg_limit_red.text
         self.model_login.anmeldung_name = self.login_view.username_input.text
         self.model_login.anmeldung_passwort = self.login_view.password_input.text
+
     def update_view_login(self):
         # ... (Inhalt bleibt gleich) ...
         self.register_view.register_rückmeldung_label.text = self.model_login.neuer_nutzer_rückmeldung
         self.login_view.anmeldung_rückmeldung_label.text = self.model_login.anmeldung_rückmeldung
+
     def update_model_time_tracking(self):
         # ... (Inhalt bleibt gleich) ...
         self.model_track_time.aktueller_nutzer_id = self.model_login.anmeldung_mitarbeiter_id_validiert
@@ -232,9 +247,12 @@ class Controller():
         self.model_track_time.neues_passwort = self.main_view.new_password_input.text
         self.model_track_time.neues_passwort_wiederholung = self.main_view.repeat_password_input.text
         self.model_track_time.bestimmtes_datum = self.main_view.month_calendar.date_label.text
+
+
     def update_view_time_tracking(self):
         # ... (Inhalt bleibt gleich) ...
         self.main_view.welcome_label.text = f"Willkommen zurück, {self.model_login.anmeldung_name}!"
+
         # Gleitzeit in Stunden und Minuten umwandeln
         gleitzeit_stunden = self.model_track_time.aktueller_nutzer_gleitzeit or 0
         stunden = int(gleitzeit_stunden)
@@ -276,23 +294,28 @@ class Controller():
 
         spinner = self.main_view.month_calendar.employee_spinner
         spinner.values = self.model_track_time.mitarbeiter
+
         aktueller_name = self.model_track_time.aktueller_nutzer_name
         if aktueller_name:
             if not spinner.text or spinner.text not in spinner.values:
                 spinner.text = aktueller_name
                 self.model_track_time.aktuelle_kalendereinträge_für_name = aktueller_name
                 self.model_track_time.aktuelle_kalendereinträge_für_id = self.model_track_time.aktueller_nutzer_id
+
         # Kumulierte Gleitzeit auch in Stunden und Minuten umwandeln
         self.main_view.flexible_time_month.text = self._format_hours_minutes(self.model_track_time.kummulierte_gleitzeit_monat)
         self.main_view.flexible_time_quarter.text = self._format_hours_minutes(self.model_track_time.kummulierte_gleitzeit_quartal)
         self.main_view.flexible_time_year.text = self._format_hours_minutes(self.model_track_time.kummulierte_gleitzeit_jahr)
+
         self.main_view.month_calendar.times_box.clear_widgets()  
         allow_edit = self._can_edit_selected_employee()
+
         gleitzeit_tag = self.model_track_time.gleitzeit_bestimmtes_datum_stunden
         if gleitzeit_tag is None:
             gleitzeit_tag = 0.0
         gleitzeit_text = self._format_hours_minutes(gleitzeit_tag)
         self.main_view.month_calendar.flexible_time_label.text = gleitzeit_text
+
         if self.model_track_time.zeiteinträge_bestimmtes_datum is not None:
             for stempel in self.model_track_time.zeiteinträge_bestimmtes_datum:
                 # Sicherstellen, dass 'stempel' das erwartete Format hat
@@ -311,6 +334,7 @@ class Controller():
                     )
                 else:
                     logger.warning(f"Unerwartetes Stempelformat in update_view_time_tracking: {stempel}")
+
     def update_view_benachrichtigungen(self):
         # ... (Inhalt bleibt gleich) ...
         logger.debug(f"update_view_benachrichtigungen: Clearing widgets. Current count: {len(self.main_view.benachrichtigungen_grid.children)}")
@@ -326,6 +350,8 @@ class Controller():
                 self.main_view.add_benachrichtigung(text=msg_text, datum=msg_datum)
             except Exception as e:
                 logger.error(f"Fehler beim Erstellen der Benachrichtigungs-UI: {e}", exc_info=True)
+
+
     #call modell funktions (Alle Callbacks werden bereits durch _bind_safe geschützt)
     
     def einloggen_button_clicked(self,b):
@@ -366,16 +392,20 @@ class Controller():
             self.model_track_time.aktuelle_kalendereinträge_für_name = self.model_track_time.aktueller_nutzer_name
             self.load_vacation_days_for_calendar()  # Urlaubstage für den Kalender laden
             logger.info("Daten-Lade-Prozess abgeschlossen, MainView angezeigt.")
+
     def registrieren_button_clicked(self,b):
         self.update_model_login()
         self.model_login.neuen_nutzer_anlegen()
         self.update_view_login()
+
+
     def stempel_button_clicked(self,b):
         # Aktuelles Datum und Uhrzeit für Bestätigung
         from datetime import datetime, date as _date
         jetzt = datetime.now()
         datum_str = jetzt.strftime("%d.%m.%Y")
         uhrzeit_str = jetzt.strftime("%H:%M:%S")
+
         # 1) Urlaub prüfen -> spezielles Warn-Popup
         try:
             if self.model_track_time.hat_urlaub_am_datum(_date.today()):
@@ -394,7 +424,6 @@ class Controller():
         except Exception as e:
             logger.error(f"Fehler bei der Prüfung auf Urlaubstag: {e}", exc_info=True)
 
-        # 2) Sonn-/Feiertagswarnung oder normale Bestätigung
         # 2) Minderjährige: Prüfung auf 6. Arbeitstag in der Woche
         try:
             nutzer = self.model_track_time.get_aktueller_nutzer()
@@ -426,6 +455,7 @@ class Controller():
             nachricht = (
                 f"Stempel-Zusammenfassung:\n\nDatum: {datum_str}\nUhrzeit: {uhrzeit_str}\n\nStempel hinzufügen?"
             )
+
         # Bestätigungs-Popup anzeigen
         self.main_view.show_messagebox(
             title="Stempel bestätigen",
@@ -435,6 +465,7 @@ class Controller():
             yes_text="OK",
             no_text="Abbrechen",
         )
+
     def _urlaub_loeschen_und_stempeln(self):
         """Löscht Urlaubseintrag von heute und setzt anschließend den Stempel."""
         from datetime import date as _date
@@ -447,14 +478,15 @@ class Controller():
                 logger.info("Urlaubstag gelöscht – fahre mit Stempel fort.")
         except Exception as e:
             logger.error(f"Fehler beim Löschen des Urlaubstags: {e}", exc_info=True)
+
         # Danach normal stempeln
         self._stempel_ausfuehren()
-
+    
     def _stempel_nach_6_tage_warnung(self):
         """Führt den Stempel aus, nachdem die 6-Tage-Warnung akzeptiert wurde."""
         from datetime import datetime, date as _date
         jetzt = datetime.now()
-
+        
         # Jetzt noch die Sonn-/Feiertagsprüfung durchführen
         if self.model_track_time.ist_sonn_oder_feiertag(jetzt.date()):
             datum_str = jetzt.strftime("%d.%m.%Y")
@@ -474,7 +506,7 @@ class Controller():
         else:
             # Keine weitere Warnung nötig, direkt stempeln
             self._stempel_ausfuehren()
-
+    
     def _stempel_ausfuehren(self):
         """Führt den eigentlichen Stempelvorgang aus."""
         self.model_track_time.stempel_hinzufügen()
@@ -582,6 +614,7 @@ class Controller():
             self.model_track_time.kummuliere_gleitzeit()
         finally:
             self.update_view_time_tracking() # Feedback + aktualisierte Werte anzeigen
+
         # PopUp-Warnungen nach einem Nachtrag immer aktualisieren
         self._refresh_popup_warnings()
 
@@ -611,6 +644,7 @@ class Controller():
                 self.model_track_time.feedback_manueller_stempel = "Bitte ein Datum auswählen."
                 self.update_view_time_tracking()
                 return
+
             datum_obj = _dt.strptime(self.model_track_time.nachtragen_datum, "%d/%m/%Y").date()
             geloescht = self.model_track_time.loesche_urlaub_am_datum(datum_obj)
             if geloescht:
@@ -620,20 +654,25 @@ class Controller():
                 logger.info(f"Urlaubstag {self.model_track_time.nachtragen_datum} gelöscht – trage Zeitstempel nach.")
         except Exception as e:
             logger.error(f"Fehler beim Löschen des Urlaubstags (Nachtragen): {e}", exc_info=True)
+
         # Danach den normalen Nachtragsfluss starten
         self._nachtragen_zeitstempel_ausfuehren()
+
     def passwort_ändern_button_clicked(self,b):
         self.update_model_time_tracking()
         self.model_track_time.update_passwort()
         self.update_view_time_tracking()
+
         
     #call view functions
     def prev_button_clicked(self, b):
         self.main_view.month_calendar.change_month(-1)
         self.load_vacation_days_for_calendar()
+
     def next_button_clicked(self, b):
         self.main_view.month_calendar.change_month(1)
         self.load_vacation_days_for_calendar()
+
     def load_vacation_days_for_calendar(self):
         """Lädt die Urlaubs- und Krankheitstage für den aktuell angezeigten Monat im Kalender."""
         jahr = self.main_view.month_calendar.year
@@ -643,6 +682,8 @@ class Controller():
         self.main_view.month_calendar.urlaubstage = urlaubstage
         self.main_view.month_calendar.krankheitstage = krankheitstage
         self.main_view.month_calendar.fill_grid_with_days()
+
+
     #change views
     def change_view_register(self,b):
         set_fixed_window_size((self.register_view.width_window, self.register_view.height_window))
@@ -651,9 +692,11 @@ class Controller():
     def change_view_login(self,b):
         set_fixed_window_size((self.login_view.width_window, self.login_view.height_window))
         self.sm.current = "login"
+
     def change_view_main(self,b):
         set_fixed_window_size((self.main_view.time_tracking_tab_width, self.main_view.time_tracking_tab_height))
         self.sm.current = "main"
+
     def show_date_picker(self, instance, focus):
         if focus:
             try:
@@ -664,6 +707,7 @@ class Controller():
             except Exception as e:
                 logger.error(f"Fehler beim Öffnen des DatePickers: {e}", exc_info=True)
             instance.focus = False
+
     #timer logik
     def start_or_stop_visual_timer(self):
         # Bestehende Events abbrechen
@@ -676,8 +720,10 @@ class Controller():
         if self.max_arbeitszeit_warning_event:
             self.max_arbeitszeit_warning_event.cancel()
             self.max_arbeitszeit_warning_event = None
+
         today_stamps = self.model_track_time.get_stamps_for_today()
         is_clocked_in = len(today_stamps) % 2 != 0
+
         if is_clocked_in:
             try:
                 last_stamp_time = today_stamps[-1].zeit
@@ -697,6 +743,7 @@ class Controller():
             self.main_view.timer_label.text = "00:00"
             self.model_track_time.delete_all_popup_benachrichtigungen_for_today()
             logger.info("PopUp-Benachrichtigungen beim Ausstempeln gelöscht")
+
     def _load_and_schedule_popups(self):
         """
         Lädt ausstehende PopUp-Benachrichtigungen aus der DB und plant sie für die richtige Uhrzeit.
@@ -728,6 +775,7 @@ class Controller():
         
         except Exception as e:
             logger.error(f"Fehler beim Laden/Planen der PopUps: {e}", exc_info=True)
+
     def _refresh_popup_warnings(self):
         """Aktualisiert alle PopUp-Warnungen basierend auf den aktuellen Stempeln."""
         try:
@@ -738,17 +786,22 @@ class Controller():
             if self.max_arbeitszeit_warning_event:
                 self.max_arbeitszeit_warning_event.cancel()
                 self.max_arbeitszeit_warning_event = None
+
             today_stamps = self.model_track_time.get_stamps_for_today()
             is_clocked_in = len(today_stamps) % 2 != 0
+
             # Bestehende PopUps entfernen, damit neue Zeiten gespeichert werden können
             self.model_track_time.delete_all_popup_benachrichtigungen_for_today()
+
             if is_clocked_in:
                 self.model_track_time.erstelle_popup_warnungen_beim_einstempeln()
                 self._load_and_schedule_popups()
             else:
                 logger.debug("_refresh_popup_warnings: Nutzer ist nicht eingestempelt – PopUps gelöscht.")
+
         except Exception as e:
             logger.error(f"Fehler beim Aktualisieren der PopUp-Warnungen: {e}", exc_info=True)
+
     def _show_popup_from_db(self, code, benachrichtigung_id):
         """
         Zeigt ein PopUp basierend auf dem Code aus der DB an und löscht die Benachrichtigung danach.
@@ -786,13 +839,16 @@ class Controller():
             
         except Exception as e:
             logger.error(f"Fehler beim Anzeigen des PopUps (Code {code}): {e}", exc_info=True)
+
     def update_visual_timer(self, dt):
         if not self.start_time_dt:
             return
+
         try:
             elapsed = datetime.now() - self.start_time_dt
             total_seconds = int(elapsed.total_seconds())
             if total_seconds < 0: total_seconds = 0
+
             hours, remainder = divmod(total_seconds, 3600)
             minutes, _ = divmod(remainder, 60)
             self.main_view.timer_label.text = f"{hours:02d}:{minutes:02d}"
@@ -801,10 +857,12 @@ class Controller():
             self.main_view.timer_label.text = "Error"
             if self.timer_event:
                 self.timer_event.cancel() # Timer stoppen, um Endlosschleife zu verhindern
+
     
     def on_date_selected_register(self, instance, value, date_range):
         if value: # Input validieren
             self.register_view.reg_geburtsdatum.text = value.strftime("%d/%m/%Y")
+
     def on_eintrag_art_selected(self, spinner_instance, text):
         if text in ["Urlaub", "Krankheit"]:
             self.main_view.time_input.opacity = 0
@@ -812,9 +870,11 @@ class Controller():
         else:
             self.main_view.time_input.opacity = 1
             self.main_view.time_label.opacity = 1
+
     def on_date_selected_main(self, instance, value, date_range):
         if value: # Input validieren
             self.main_view.date_input.text = value.strftime("%d/%m/%Y")
+
     def on_checkbox_changed(self, checkbox_instance, value):
         self.model_track_time.tage_ohne_stempel_beachten = bool(value)
         self.model_track_time.kummuliere_gleitzeit()
@@ -849,6 +909,7 @@ class Controller():
             except Exception as e:
                 logger.error(f"Fehler beim Öffnen des TimePickers: {e}", exc_info=True)
             instance.focus = False
+
     def on_time_selected(self, instance, time_val):
         if self.active_time_input and time_val: # Input validieren
             self.active_time_input.text = time_val.strftime("%H:%M")
@@ -929,6 +990,7 @@ class Controller():
         except Exception as e:
             logger.error(f"Fehler beim Bearbeiten des Stempels: {e}", exc_info=True)
             self.main_view.show_messagebox("Fehler", f"Ein Fehler ist aufgetreten:\n{e}")
+
     def stempel_löschen_button_clicked(self, stempel_id: int):
         """
         Wird aufgerufen, wenn der Löschen-Button im Bestätigungsdialog bestätigt wird.
@@ -970,6 +1032,7 @@ class Controller():
             self.main_view.show_messagebox("Fehler", f"Ein Fehler ist aufgetreten:\n{e}")
         
     # add_entry_in_popup ist im Original-Code nicht angebunden, daher ignoriert.
+
     #getter
     def get_view_manager(self):
         return self.sm

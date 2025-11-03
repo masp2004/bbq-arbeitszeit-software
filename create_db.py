@@ -1,4 +1,5 @@
 import sqlite3
+
 conn = sqlite3.connect('system.db')
 cursor = conn.cursor()
 cursor.executescript('''

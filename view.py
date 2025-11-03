@@ -887,7 +887,6 @@ class MainView(Screen):
 
         self.settings_layout_left.add_widget(left_card)
 
-  
         self.settings_horizontal_layout.add_widget(self.settings_layout_left)
         self.settings_horizontal_layout.add_widget(self.settings_layout)
 
@@ -915,7 +914,7 @@ class MainView(Screen):
             halign="left",
             valign="middle",
             size_hint=(1, None),
-            text_size=(350, None)
+            text_size=(dp(430), None)
         )
         message_label.bind(
             texture_size=lambda instance, value: setattr(instance, 'height', value[1])
@@ -1290,17 +1289,17 @@ class MonthCalendar(BoxLayout):
         self.clear_widgets()
 
         # Auswahl, welcher Mitarbeiter-Kalender angezeigt werden soll
-        calendar_choice = BoxLayout(orientation="horizontal", size_hint_y=None, height=50, padding=10)
-        calendar_choice.add_widget(Label(text="Kalenderansicht:", size_hint=(None, None), size=(150, 30), 
-                                   text_size=(150, 30), halign="left", valign="middle"))
-        self.employee_spinner = Spinner(size_hint=(None, None), size=(200, 30))
+        calendar_choice = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(40), padding=dp(8))
+        calendar_choice.add_widget(Label(text="Kalenderansicht:", size_hint=(None, None), size=(dp(120), dp(24)), 
+                                   text_size=(dp(120), dp(24)), halign="left", valign="middle"))
+        self.employee_spinner = Spinner(size_hint=(None, None), size=(dp(160), dp(24)))
         calendar_choice.add_widget(self.employee_spinner)
         self.add_widget(calendar_choice)
 
         # Header für den Kalender
-        header = BoxLayout(size_hint_y=None, height=30)
-        self.prev_btn = Button(text="<<", size_hint_x=None, width=60)
-        self.next_btn = Button(text=">>", size_hint_x=None, width=60)
+        header = BoxLayout(size_hint_y=None, height=dp(24))
+        self.prev_btn = Button(text="<<", size_hint_x=None, width=dp(48))
+        self.next_btn = Button(text=">>", size_hint_x=None, width=dp(48))
         self.title_label = Label(text=self.title_text())
         header.add_widget(self.prev_btn)
         header.add_widget(self.title_label)
@@ -1309,33 +1308,33 @@ class MonthCalendar(BoxLayout):
 
         # Wochentage
         weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-        weekday_row = GridLayout(cols=7, padding=(0, 10, 0, 0), size_hint_y=None, height=30)
+        weekday_row = GridLayout(cols=7, padding=(dp(0), dp(8), dp(0), dp(0)), size_hint_y=None, height=dp(24))
         for weekday in weekdays:
             weekday_row.add_widget(Label(text=weekday, color=(1, 1, 1, 1)))
         self.add_widget(weekday_row)
 
         # Grid für Kalender
-        self.grid = GridLayout(cols=7, padding=(0, 10, 0, 0))
+        self.grid = GridLayout(cols=7, padding=(dp(0), dp(8), dp(0), dp(0)))
         self.add_widget(self.grid)
 
         self.fill_grid_with_days()
 
         # Tabelle für die Anzeige der gestempelten Zeiten
-        self.detail_table = LinedGridLayout(cols=3, size_hint_y=None, height=150, padding=10, spacing=10)
+        self.detail_table = LinedGridLayout(cols=3, size_hint_y=None, height=dp(120), padding=dp(8), spacing=dp(8))
 
         # Überschriften
         self.detail_table.add_widget(self.aligned_label(text="Datum", bold=True, color=(0, 0, 0, 1), 
-                                                        size_hint_y=None, height=20, halign="left", valign="top"))
+                                                        size_hint_y=None, height=dp(16), halign="left", valign="top"))
         self.detail_table.add_widget(self.aligned_label(text="Zeiten", bold=True, color=(0, 0, 0, 1), 
-                                                        size_hint_y=None, height=20, halign="left", valign="top"))
+                                                        size_hint_y=None, height=dp(16), halign="left", valign="top"))
         self.detail_table.add_widget(self.aligned_label(text="Gleitzeit", bold=True, color=(0, 0, 0, 1), 
-                                                        size_hint_y=None, height=20, halign="left", valign="top"))
+                                                        size_hint_y=None, height=dp(16), halign="left", valign="top"))
 
         # Inhalte
         self.date_label = self.aligned_label(text="", color=(0, 0, 0, 1), halign="left", valign="top")
 
-        self.times_scroll = ScrollView(size_hint=(1, 1), bar_width=10, bar_color=(0.7, 0.7, 0.7, 1))
-        self.times_box = GridLayout(cols=1, size_hint_y=None, spacing=5)
+        self.times_scroll = ScrollView(size_hint=(1, 1), bar_width=dp(8), bar_color=(0.7, 0.7, 0.7, 1))
+        self.times_box = GridLayout(cols=1, size_hint_y=None, spacing=dp(4))
         self.times_box.bind(minimum_height=self.times_box.setter("height"))
         self.times_scroll.add_widget(self.times_box)
 
@@ -1651,7 +1650,7 @@ class LinedGridLayout(GridLayout):
 
             if len(self.children) >= self.cols:
                 first_row_widgets = self.children[-self.cols:]
-                y = min(widget.y for widget in first_row_widgets) - 5
+                y = min(widget.y for widget in first_row_widgets) - dp(4)
                 Line(points=[self.x, y, self.x + self.width, y])
 
 
@@ -1701,7 +1700,7 @@ class DayCell(BoxLayout):
             Color(*bg_color)
             self.rect = Rectangle(size=self.size, pos=self.pos)
             Color(0.7, 0.7, 0.7, 1)
-            self.line = Line(rectangle=(self.x, self.y, self.width, self.height), width=1)
+            self.line = Line(rectangle=(self.x, self.y, self.width, self.height), width=dp(0.8))
 
         self.bind(size=self._update_graphics, pos=self._update_graphics)
 
@@ -1711,19 +1710,24 @@ class DayCell(BoxLayout):
         else:
             color = (0.7, 0.7, 0.7, 1)
 
+        day_container = FloatLayout(size_hint_y=None, height=dp(64))
+
         day_label = Label(
             text=str(day_number),
             halign="right",
             valign="top",
             color=color,
-            size_hint_y=None,
-            padding=(10, 30)
+            size_hint=(None, None),
+            size=(dp(35), dp(40))
         )
         day_label.bind(size=day_label.setter("text_size"))
-        self.add_widget(day_label)
+        day_label.pos_hint = {"right": 1, "top": 1}
+
+        day_container.add_widget(day_label)
+        self.add_widget(day_container)
 
         # Bereich für Einträge
-        self.entries_box = BoxLayout(orientation="vertical", spacing=1)
+        self.entries_box = BoxLayout(orientation="vertical", spacing=dp(0.8))
         self.add_widget(self.entries_box)
 
     def _update_graphics(self, *args):
@@ -1750,7 +1754,7 @@ class DayCell(BoxLayout):
             text=entry_text,
             color=(0, 0, 0, 1),
             size_hint_y=None,
-            height=20
+            height=dp(16)
         )
         with lbl.canvas.before:
             lbl.bg_color = Color(*color)
@@ -1840,7 +1844,7 @@ class BorderedLabel(Label):
         # Rand
         with self.canvas.after:
             self.border_color = Color(0.5, 0.5, 0.5, 1)
-            self.border_line = Line(rectangle=(self.x, self.y, self.width, self.height), width=1)
+            self.border_line = Line(rectangle=(self.x, self.y, self.width, self.height), width=dp(0.8))
 
         # Aktualisieren, wenn sich etwas ändert
         self.bind(pos=self.update_graphics, size=self.update_graphics)
