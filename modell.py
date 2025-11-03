@@ -1413,7 +1413,8 @@ class ModellTrackTime():
                 (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
                 (Zeiteintrag.datum == abwesenheit_datum)
             )
-            if session.execute(stamp_stmt).scalar_one_or_none():
+            # Prüfen, ob überhaupt ein Stempel vorhanden ist (mehrere pro Tag möglich)
+            if session.execute(stamp_stmt).scalars().first():
                 return {"error": "An diesem Tag ist bereits ein Zeitstempel vorhanden. Bitte löschen Sie diesen zuerst."}
 
             # Prüfen, ob bereits eine Abwesenheit existiert

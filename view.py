@@ -335,6 +335,10 @@ class MainView(Screen):
             **kwargs: Keyword-Argumente für Screen
         """
         super().__init__(**kwargs)
+        # Flags zur Synchronisation zwischen Anzeige-Labels und Eingabefeldern
+        self._syncing_week_hours = False
+        self._syncing_green_limit = False
+        self._syncing_red_limit = False
         self.register_event_type('on_settings_value_selected')
         self.layout = TabbedPanel(do_default_tab=False, tab_width=dp(136))
         self.date_picker = MDDatePicker()
@@ -889,8 +893,20 @@ class MainView(Screen):
         self.settings_tab.add_widget(self.settings_horizontal_layout)
         self.layout.add_widget(self.settings_tab)
 
-    def show_messagebox(self, title, message):
-        layout = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(12))
+       
+    def show_messagebox(self, title, message, callback_yes=None, callback_no=None, yes_text="OK", no_text=None):
+        """
+        Zeigt eine Messagebox mit optionalen Buttons.
+        
+        Args:
+            title: Titel des Popups
+            message: Nachricht
+            callback_yes: Callback für "Ja/OK/Fortfahren"-Button
+            callback_no: Callback für "Nein/Abbrechen"-Button (optional)
+            yes_text: Text für den Ja-Button (Standard: "OK")
+            no_text: Text für den Nein-Button (optional, wenn None wird nur ein Button angezeigt)
+        """
+        layout = BoxLayout(orientation="vertical", padding=10, spacing=15)
 
         # Label mit Umbruch
         message_label = Label(
@@ -905,24 +921,56 @@ class MainView(Screen):
         )
         layout.add_widget(message_label)
 
-        close_button = Button(text="OK", size_hint_y=None, height=dp(32))
-        layout.add_widget(close_button)
-
+        # Button-Layout
+        button_layout = BoxLayout(spacing=10, size_hint_y=None, height=40)
+        
         popup = Popup(
             title=title,
             content=layout,
             size_hint=(None, None),
-            size=(dp(470), dp(160)),
+            size=(400, 200),
             auto_dismiss=False
         )
 
+        if no_text:
+            # Zwei Buttons: Abbrechen und Fortfahren
+            no_button = Button(text=no_text, size_hint=(0.5, 1))
+            yes_button = Button(text=yes_text, size_hint=(0.5, 1))
+            
+            def on_no(*args):
+                popup.dismiss()
+                if callback_no:
+                    callback_no()
+            
+            def on_yes(*args):
+                popup.dismiss()
+                if callback_yes:
+                    callback_yes()
+            
+            no_button.bind(on_release=on_no)
+            yes_button.bind(on_release=on_yes)
+            
+            button_layout.add_widget(no_button)
+            button_layout.add_widget(yes_button)
+        else:
+            # Ein Button: OK
+            ok_button = Button(text=yes_text, size_hint=(1, 1))
+            
+            def on_ok(*args):
+                popup.dismiss()
+                if callback_yes:
+                    callback_yes()
+            
+            ok_button.bind(on_release=on_ok)
+            button_layout.add_widget(ok_button)
+        
+        layout.add_widget(button_layout)
+
         def adjust_popup_height(*args):
             # Höhe anpassen
-            popup.height = message_label.height + dp(120)
+            popup.height = message_label.height + 150
 
         message_label.bind(height=adjust_popup_height)
-
-        close_button.bind(on_release=popup.dismiss)
         popup.open()
 
     def open_settings_edit_popup(self, field_label, current_value="", label_attr=None):
@@ -1034,6 +1082,91 @@ class MainView(Screen):
         for idx, widget in enumerate(widgets):
             widget.focus_next = widgets[(idx + 1) % len(widgets)]
 
+    def _update_week_hours_input(self, _instance, value):
+        if not hasattr(self, "week_hours_spinner") or self._syncing_week_hours:
+            return
+        cleaned = (value or "").strip()
+        if cleaned.endswith("h"):
+            cleaned = cleaned[:-1].strip()
+        target_text = cleaned if cleaned else "Bitte wählen"
+        if self.week_hours_spinner.text == target_text:
+            return
+        self._syncing_week_hours = True
+        try:
+            self.week_hours_spinner.text = target_text
+        finally:
+            self._syncing_week_hours = False
+
+    def _on_week_hours_spinner_change(self, _spinner, value):
+        if self._syncing_week_hours:
+            return
+        numeric = value.strip()
+        if not numeric:
+            display_value = ""
+        else:
+            display_value = f"{numeric} h"
+        if self.week_hours_value_label.text == display_value:
+            return
+        self._syncing_week_hours = True
+        try:
+            self.week_hours_value_label.text = display_value
+        finally:
+            self._syncing_week_hours = False
+
+    def _update_green_limit_input(self, _instance, value):
+        if not hasattr(self, "green_limit_input") or self._syncing_green_limit:
+            return
+        cleaned = (value or "").strip()
+        if cleaned.endswith("h"):
+            cleaned = cleaned[:-1].strip()
+        if self.green_limit_input.text == cleaned:
+            return
+        self._syncing_green_limit = True
+        try:
+            self.green_limit_input.text = cleaned
+        finally:
+            self._syncing_green_limit = False
+
+    def _on_green_limit_input_change(self, _instance, value):
+        if self._syncing_green_limit:
+            return
+        cleaned = value.strip()
+        display_value = f"{cleaned} h" if cleaned else ""
+        if self.green_limit_value_label.text == display_value:
+            return
+        self._syncing_green_limit = True
+        try:
+            self.green_limit_value_label.text = display_value
+        finally:
+            self._syncing_green_limit = False
+
+    def _update_red_limit_input(self, _instance, value):
+        if not hasattr(self, "red_limit_input") or self._syncing_red_limit:
+            return
+        cleaned = (value or "").strip()
+        if cleaned.endswith("h"):
+            cleaned = cleaned[:-1].strip()
+        if self.red_limit_input.text == cleaned:
+            return
+        self._syncing_red_limit = True
+        try:
+            self.red_limit_input.text = cleaned
+        finally:
+            self._syncing_red_limit = False
+
+    def _on_red_limit_input_change(self, _instance, value):
+        if self._syncing_red_limit:
+            return
+        cleaned = value.strip()
+        display_value = f"{cleaned} h" if cleaned else ""
+        if self.red_limit_value_label.text == display_value:
+            return
+        self._syncing_red_limit = True
+        try:
+            self.red_limit_value_label.text = display_value
+        finally:
+            self._syncing_red_limit = False
+
 
 class TrafficLight(BoxLayout):
     """
@@ -1139,6 +1272,9 @@ class MonthCalendar(BoxLayout):
         today = datetime.date.today()
         self.year = today.year
         self.month = today.month
+        self.urlaubstage = []  # Liste der Urlaubstage für den aktuellen Monat
+        self.krankheitstage = []  # Liste der Krankheitstage für den aktuellen Monat
+        self.controller = None  # Wird vom Controller gesetzt
 
         self.build_ui()
 
@@ -1255,8 +1391,10 @@ class MonthCalendar(BoxLayout):
             weekday = day.weekday()
             is_weekend = weekday >= 5
             is_holiday = self.is_holiday(day)
+            is_vacation = day in self.urlaubstage  # Prüfen ob Urlaubstag
+            is_sick = day in self.krankheitstage  # Prüfen ob Krankheitstag
 
-            self.cell = DayCell(day.day, in_month, is_weekend, is_holiday)
+            self.cell = DayCell(day.day, in_month, is_weekend, is_holiday, is_vacation, is_sick)
             self.cell.bind(
                 on_touch_down=lambda instance, touch, d=day: self.on_day_selected(d) 
                 if instance.collide_point(*touch.pos) and touch.button == "left" else None
@@ -1292,16 +1430,21 @@ class MonthCalendar(BoxLayout):
         if hasattr(self, "day_selected_callback"):
             self.day_selected_callback(date)
 
-    def add_time_row(self, stempelzeit: str, is_problematic):
+    def add_time_row(self, stempelzeit: str, is_problematic, stempel_id: int, date_str: str, allow_edit: bool = True, gleitzeit_text: str = ""):
         """
         Fügt eine Zeile mit einer Stempelzeit zur Detail-Tabelle hinzu.
         
         Args:
             stempelzeit (str): Formatierte Stempelzeit (z.B. "08:30")
+            is_problematic (bool): Ob der Eintrag problematisch ist
+            stempel_id (int): ID des Zeiteintrags in der Datenbank
+            date_str (str): Datum als String (Format: "dd.mm.yyyy")
+            allow_edit (bool): Ob Bearbeiten-/Löschen-Buttons angezeigt werden sollen
+            gleitzeit_text (str): Formatierte Gleitzeit für den Tag
         """
 
-        # Layout für eine Zeile (Zeit + Button)
-        row_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(24), spacing=dp(8))
+        # Layout für eine Zeile (Zeit + optional Buttons)
+        row_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=30, spacing=10)
 
 
         if is_problematic:
@@ -1327,65 +1470,124 @@ class MonthCalendar(BoxLayout):
         times_label.bind(pos=lambda instance, value: setattr(rect, 'pos', value))
 
         # Bearbeiten-Button
-        self.edit_button = MDIconButton(
+        edit_button = MDIconButton(
             icon="pencil", 
             theme_text_color="Custom",
             text_color=(0, 0, 0, 1)
         )
-        edit_wrapper = AnchorLayout(size_hint_x=None, width=dp(40))
-        edit_wrapper.add_widget(self.edit_button)
+        # Button-Event binden: Ruft open_edit_popup mit stempel_id, date_str und aktueller Zeit auf
+        edit_button.bind(on_release=lambda btn: self.open_edit_popup(stempel_id, date_str, stempelzeit))
+        edit_wrapper = AnchorLayout(size_hint_x=None, width=50)
+        edit_wrapper.add_widget(edit_button)
 
 
 
-        self.delete_button = MDIconButton(
+        delete_button = MDIconButton(
             icon="delete",
             theme_text_color="Custom",
             text_color=(0, 0, 0, 1)
         )
-
-        delete_wrapper = AnchorLayout(size_hint_x=None, width=dp(40))
-        delete_wrapper.add_widget(self.delete_button)
+        # Button-Event binden: Ruft open_delete_popup mit stempel_id und date_str auf
+        delete_button.bind(on_release=lambda btn: self.open_delete_popup(stempel_id, date_str, stempelzeit))
+        delete_wrapper = AnchorLayout(size_hint_x=None, width=50)
+        delete_wrapper.add_widget(delete_button)
 
         row_layout.add_widget(times_label)
-        row_layout.add_widget(edit_wrapper)
-        row_layout.add_widget(delete_wrapper)
+        if allow_edit:
+            row_layout.add_widget(edit_wrapper)
+            row_layout.add_widget(delete_wrapper)
 
         # Die ganze Zeile (Layout) zur times_box hinzufügen
         self.times_box.add_widget(row_layout)
 
+        if gleitzeit_text:
+            self.flexible_time_label.text = gleitzeit_text
 
-    def open_edit_popup(self, date, time):
+
+    def open_edit_popup(self, stempel_id: int, date_str: str, time_str: str):
         """
         Öffnet ein Popup zum Bearbeiten von Zeiteinträgen.
         
         Args:
-            date (datetime.date): Datum, für das Einträge bearbeitet werden sollen
-            
-        Returns:
-            self: Popup-Instanz für weitere Konfiguration
+            stempel_id (int): ID des Zeiteintrags in der Datenbank
+            date_str (str): Datum als String (Format: "dd.mm.yyyy")
+            time_str (str): Aktuelle Zeit als String (Format: "HH:MM")
         """
 
-        popup_layout = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(16))
+        popup_layout = BoxLayout(orientation="vertical", padding=10, spacing=20)
 
         # Header
-        header_row = BoxLayout(size_hint_y=None, height=dp(32), spacing=dp(12))
-        header_row.add_widget(Label(text="Zeitstempel:", size_hint=(None, None), size=(dp(80), dp(28)), 
-                                    text_size=(dp(80), dp(28)), halign="left", valign="middle"))
-        self.time_input = TextInput(text=time, multiline=False, size_hint=(None, None), size=(dp(64), dp(28)), readonly=True)
-        self.time_input.bind(focus=self.controller.show_time_picker)
-        header_row.add_widget(self.time_input)
+        header_row = BoxLayout(size_hint_y=None, height=40, spacing=15)
+        header_row.add_widget(Label(text="Zeitstempel:", size_hint=(None, None), size=(100, 35), 
+                                    text_size=(100, 35), halign="left", valign="middle"))
+        time_input = TextInput(text=time_str, multiline=False, size_hint=(None, None), size=(80, 35), readonly=True)
+        
+        # Time Picker binden
+        def show_time_picker_for_edit(instance, value):
+            if value:  # Nur wenn focused
+                if hasattr(self, 'controller') and self.controller:
+                    # Speichere Referenz zum Input-Feld im Controller
+                    self.controller.active_time_input = time_input
+                    self.controller.show_time_picker(instance, value)
+        
+        time_input.bind(focus=show_time_picker_for_edit)
+        header_row.add_widget(time_input)
         popup_layout.add_widget(header_row)
 
         # Speichern-Button
-        self.save_btn = Button(text="Speichern", size_hint_y=None, height=dp(32))
-        popup_layout.add_widget(self.save_btn)
-
-        # Popup erstellen und öffnen
-        popup = Popup(title=f"{date}", content=popup_layout, size_hint=(None, None), size=(dp(200), dp(160)))
+        save_btn = Button(text="Speichern", size_hint_y=None, height=40)
+        
+        # Popup erstellen
+        popup = Popup(title=f"Stempel bearbeiten - {date_str}", content=popup_layout, 
+                     size_hint=(None, None), size=(250, 200))
+        
+        # Speichern-Button-Event: Ruft Controller-Methode auf
+        def on_save(*args):
+            neue_zeit_str = time_input.text
+            if hasattr(self, 'controller') and self.controller:
+                self.controller.stempel_bearbeiten_button_clicked(stempel_id, neue_zeit_str)
+            popup.dismiss()
+        
+        save_btn.bind(on_release=on_save)
+        popup_layout.add_widget(save_btn)
+        
         popup.open()
 
-        self.current_popup = self
-        return self
+
+    def open_delete_popup(self, stempel_id: int, date_str: str, time_str: str):
+        """
+        Öffnet ein Popup zur Bestätigung des Löschens eines Zeiteintrags.
+        
+        Args:
+            stempel_id (int): ID des Zeiteintrags in der Datenbank
+            date_str (str): Datum als String (Format: "dd.mm.yyyy")
+            time_str (str): Zeit als String (Format: "HH:MM")
+        """
+        nachricht = f"Zeitstempel löschen:\n\nDatum: {date_str}\nUhrzeit: {time_str}\n\nMöchten Sie diesen Stempel wirklich löschen?"
+        
+        def on_confirm():
+            if hasattr(self, 'controller') and self.controller:
+                self.controller.stempel_löschen_button_clicked(stempel_id)
+        
+        # MainView Messagebox verwenden (über parent-Hierarchie)
+        main_view = None
+        parent = self.parent
+        while parent:
+            if isinstance(parent, MainView):
+                main_view = parent
+                break
+            parent = parent.parent
+        
+        if main_view:
+            main_view.show_messagebox(
+                title="Stempel löschen",
+                message=nachricht,
+                callback_yes=on_confirm,
+                callback_no=None,
+                yes_text="Löschen",
+                no_text="Abbrechen"
+            )
+
 
     def is_holiday(self, date):
         """Prüft, ob das gegebene Datum ein Feiertag ist"""
@@ -1464,25 +1666,34 @@ class DayCell(BoxLayout):
         entries_box (BoxLayout): Container für Tag-Einträge
     """
 
-    def __init__(self, day_number, in_month, is_weekend, is_holiday):
+    def __init__(self, day_number, in_month, is_weekend, is_holiday, is_vacation=False, is_sick=False):
         """
         Initialisiert eine Kalender-Zelle für einen Tag.
         
         Args:
             day_number (int): Tageszahl
             in_month (bool): True wenn Tag im aktuellen Monat, False für Nachbar-Monate
+            is_weekend (bool): True wenn Wochenende
+            is_holiday (bool): True wenn Feiertag
+            is_vacation (bool): True wenn Urlaubstag
+            is_sick (bool): True wenn Krankheitstag
         """
 
-        super().__init__(orientation="vertical", padding=dp(1.6), spacing=dp(1.6))
+        super().__init__(orientation="vertical", padding=2, spacing=2)
         self.size_hint_y = None
-        self.height = dp(64)
+        self.height = 80
 
-        if is_weekend:
-            bg_color = (0.9, 0.9, 0.9, 1)
+        # Priorität der Hintergrundfarben: Krankheit > Urlaub > Feiertag > Wochenende > Normal
+        if is_sick:
+            bg_color = (1, 0.9, 0.7, 1)  # Hellorange für Krankheit
+        elif is_vacation:
+            bg_color = (0.8, 0.9, 1, 1)  # Hellblau für Urlaub
         elif is_holiday:
-            bg_color = (1, 0.8, 0.8, 1)
+            bg_color = (1, 0.8, 0.8, 1)  # Rosa für Feiertag
+        elif is_weekend:
+            bg_color = (0.9, 0.9, 0.9, 1)  # Grau für Wochenende
         else:
-            bg_color = (1, 1, 1, 1)
+            bg_color = (1, 1, 1, 1)  # Weiß für normale Tage
 
         # Hintergrund und Rahmen
         with self.canvas.before:
