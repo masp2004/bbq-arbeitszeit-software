@@ -6,29 +6,100 @@ from pathlib import Path
 import holidays 
 import logging
 import sys
+import os
 
 # Logger für dieses Modul
 logger = logging.getLogger(__name__)
 
-def _resolve_db_path(db_name: str = "system.db") -> Path:
-    """Ermittelt den absoluten Pfad zur Datenbank, kompatibel mit PyInstaller."""
-    if getattr(sys, "frozen", False):
-        exe_dir = Path(sys.executable).resolve().parent
-        candidates = []
-        if hasattr(sys, "_MEIPASS"):
-            candidates.append(Path(sys._MEIPASS) / db_name)
-        candidates.append(exe_dir / db_name)
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
-        return candidates[-1]
-    return Path(__file__).resolve().parent / db_name
+def get_db_path():
+    """
+    Bestimmt den Pfad zur Datenbankdatei.
+    Bei .exe: Im Ordner der .exe-Datei
+    Bei Entwicklung: Im aktuellen Arbeitsverzeichnis
+    """
+    if getattr(sys, 'frozen', False):
+        # Anwendung läuft als .exe (PyInstaller)
+        app_dir = os.path.dirname(sys.executable)
+    else:
+        # Anwendung läuft im Entwicklungsmodus
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    db_path = os.path.join(app_dir, 'system.db')
+    logger.info(f"Datenbankpfad: {db_path}")
+    return db_path
 
-
-DB_PATH = _resolve_db_path()
+def initialize_database(db_path):
+    """
+    Erstellt die Datenbank mit allen Tabellen, falls sie nicht existiert.
+    """
+    import sqlite3
+    
+    if os.path.exists(db_path):
+        logger.info("Datenbank existiert bereits.")
+        return
+    
+    logger.info("Datenbank nicht gefunden. Erstelle neue Datenbank...")
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.executescript('''
+            CREATE TABLE IF NOT EXISTS users (
+                mitarbeiter_id INTEGER PRIMARY KEY,
+                name VARCHAR(30) UNIQUE NOT NULL,
+                password VARCHAR(15) NOT NULL,
+                vertragliche_wochenstunden INTEGER NOT NULL,
+                geburtsdatum DATE NOT NULL,   
+                gleitzeit  DECIMAL(4,2) NOT NULL DEFAULT 0,
+                letzter_login DATE NOT NULL,
+                ampel_grün INTEGER NOT NULL DEFAULT 5,
+                ampel_rot INTEGER NOT NULL DEFAULT -5,
+                vorgesetzter_id INTEGER   REFERENCES users(mitarbeiter_id)
+            );
+            CREATE TABLE IF NOT EXISTS zeiteinträge (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mitarbeiter_id INTEGER NOT NULL REFERENCES users(mitarbeiter_id),
+                zeit TIME NOT NULL,
+                datum DATE NOT NULL,
+                validiert BOOLEAN  NOT NULL DEFAULT 0      
+            ); 
+            CREATE TABLE IF NOT EXISTS benachrichtigungen (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mitarbeiter_id INTEGER NOT NULL REFERENCES users(mitarbeiter_id),
+                benachrichtigungs_code INTEGER NOT NULL, 
+                datum DATE,
+                ist_popup BOOLEAN NOT NULL DEFAULT 0,
+                popup_uhrzeit TIME
+            );
+            CREATE TABLE IF NOT EXISTS abwesenheiten (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mitarbeiter_id INTEGER NOT NULL REFERENCES users(mitarbeiter_id),
+                datum DATE NOT NULL,
+                typ TEXT CHECK (typ IN ('Urlaub', 'Krankheit', 'Fortbildung', 'Sonstiges')) NOT NULL,
+                genehmigt BOOLEAN NOT NULL DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS wochenstunden_historie (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mitarbeiter_id INTEGER NOT NULL REFERENCES users(mitarbeiter_id),
+                gueltig_ab DATE NOT NULL,
+                wochenstunden INTEGER NOT NULL,
+                UNIQUE (mitarbeiter_id, gueltig_ab)
+            );         
+        ''')
+        conn.commit()
+        conn.close()
+        logger.info("Datenbank erfolgreich erstellt.")
+    except Exception as e:
+        logger.critical(f"Fehler beim Erstellen der Datenbank: {e}", exc_info=True)
+        raise
 
 try:
-    engine = create_engine(f"sqlite:///{DB_PATH.as_posix()}", echo=False) # echo=True ist im Prod-Betrieb zu "laut"
+    # Datenbankpfad bestimmen und ggf. Datenbank erstellen
+    DB_PATH = get_db_path()
+    initialize_database(DB_PATH)
+    
+    # Datenbankverbindung aufbauen
+    engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
     Base = saorm.declarative_base()
     Session = saorm.sessionmaker(bind=engine)
     session = Session()
@@ -37,7 +108,7 @@ except SQLAlchemyError as e:
     # Wenn das passiert, kann die App nicht funktionieren.
     # In einer realen App würde man hier vielleicht beenden.
     # Für Kivy lassen wir es, der Controller fängt die Fehler ab.
-    session = None 
+    session = None
 
 class mitarbeiter(Base):
     __tablename__ = "users"
@@ -153,6 +224,79 @@ class Benachrichtigungen(Base):
             return f"Fehlerhafte Benachrichtigung (Code: {self.benachrichtigungs_code})"
 
 
+class VertragswochenstundenHistorie(Base):
+    __tablename__ = "wochenstunden_historie"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
+    gueltig_ab = Column(Date, nullable=False)
+    wochenstunden = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("mitarbeiter_id", "gueltig_ab", name="uq_wochenstunden_historie_eintrag"),
+    )
+
+
+def _normalize_to_date(value):
+    if isinstance(value, date):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, str):
+        for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(value, fmt).date()
+            except ValueError:
+                continue
+    return None
+
+
+def hole_wochenstunden_am_datum(mitarbeiter_id, datum, fallback_wochenstunden):
+    if not mitarbeiter_id:
+        return fallback_wochenstunden
+
+    datum = _normalize_to_date(datum)
+    if datum is None:
+        logger.debug("hole_wochenstunden_am_datum: Ungültiges Datum übergeben, verwende Fallback")
+        return fallback_wochenstunden
+
+    if not session:
+        logger.error("hole_wochenstunden_am_datum: Keine aktive DB-Session, verwende Fallback")
+        return fallback_wochenstunden
+
+    try:
+        stmt = (
+            select(VertragswochenstundenHistorie.wochenstunden)
+            .where(
+                (VertragswochenstundenHistorie.mitarbeiter_id == mitarbeiter_id) &
+                (VertragswochenstundenHistorie.gueltig_ab <= datum)
+            )
+            .order_by(VertragswochenstundenHistorie.gueltig_ab.desc())
+            .limit(1)
+        )
+        result = session.execute(stmt).scalar_one_or_none()
+        if result is not None:
+            return int(result)
+    except SQLAlchemyError as e:
+        logger.error(f"hole_wochenstunden_am_datum: Fehler beim Lesen der Historie: {e}", exc_info=True)
+
+    return fallback_wochenstunden
+
+
+def berechne_taegliche_sollzeit(wochenstunden, fallback_stunden=None):
+    try:
+        wochenstunden_float = float(wochenstunden) if wochenstunden is not None else None
+    except (TypeError, ValueError):
+        wochenstunden_float = None
+
+    if wochenstunden_float is None or wochenstunden_float <= 0:
+        if fallback_stunden is not None:
+            return timedelta(hours=float(fallback_stunden))
+        return timedelta()
+
+    return timedelta(hours=(wochenstunden_float / 5))
+
+
 class CalculateTime():
      def __new__(cls, eintrag1, eintrag2, nutzer):
          if eintrag1.datum != eintrag2.datum:
@@ -244,6 +388,7 @@ class ModellTrackTime():
     def __init__(self):
         self.aktueller_nutzer_id = None
         self.aktueller_nutzer_name = None
+        self.aktueller_nutzer_geburtsdatum = None
         self.aktueller_nutzer_vertragliche_wochenstunden = None
         self.aktueller_nutzer_gleitzeit = None
         self.aktueller_nutzer_ampel_rot = None
@@ -453,11 +598,15 @@ class ModellTrackTime():
                 else:
                     i += 1
 
-            if nutzer.vertragliche_wochenstunden and nutzer.vertragliche_wochenstunden > 0:
-                tägliche_arbeitszeit = timedelta(hours=(nutzer.vertragliche_wochenstunden / 5))
+            wochenstunden = hole_wochenstunden_am_datum(
+                nutzer.mitarbeiter_id,
+                date_obj,
+                nutzer.vertragliche_wochenstunden,
+            )
+            tägliche_arbeitszeit = berechne_taegliche_sollzeit(wochenstunden)
+            if tägliche_arbeitszeit > timedelta():
                 gleitzeit_diff = arbeitszeit_summe - tägliche_arbeitszeit
             else:
-                tägliche_arbeitszeit = timedelta()
                 gleitzeit_diff = arbeitszeit_summe
 
             self.gleitzeit_bestimmtes_datum_stunden = round(gleitzeit_diff.total_seconds() / 3600, 2) if einträge else 0.0
@@ -481,6 +630,7 @@ class ModellTrackTime():
             nutzer = session.execute(stmt).scalar_one_or_none()
             if nutzer:
                 self.aktueller_nutzer_name = nutzer.name
+                self.aktueller_nutzer_geburtsdatum = nutzer.geburtsdatum
                 self.aktueller_nutzer_vertragliche_wochenstunden = nutzer.vertragliche_wochenstunden
                 # Gleitzeit ist DECIMAL(4,2) in DB, aber Integer in Klasse?
                 # Das ist ein potenzieller Bug. Ich caste zu float für Sicherheit.
@@ -515,6 +665,148 @@ class ModellTrackTime():
         except SQLAlchemyError as e:
             logger.error(f"DB-Fehler beim Aktualisieren von letzter_login: {e}", exc_info=True)
             session.rollback()
+
+    def aktualisiere_vertragliche_wochenstunden(self, neue_wochenstunden, gueltig_ab=None, mitarbeiter_id=None):
+        """Aktualisiert die vertraglichen Wochenstunden und pflegt die Historie."""
+        ziel_id = mitarbeiter_id or self.aktueller_nutzer_id
+        if ziel_id is None:
+            logger.warning("aktualisiere_vertragliche_wochenstunden: Kein Zielnutzer angegeben")
+            return {"error": "Kein Nutzer angegeben"}
+
+        if not session:
+            logger.error("aktualisiere_vertragliche_wochenstunden: Keine DB-Session verfügbar")
+            return {"error": "Keine DB-Session"}
+
+        try:
+            neue_wochenstunden_int = int(neue_wochenstunden)
+        except (TypeError, ValueError):
+            logger.warning(f"aktualisiere_vertragliche_wochenstunden: Ungültiger Wert '{neue_wochenstunden}'")
+            return {"error": "Ungültige Wochenstunden"}
+
+        if neue_wochenstunden_int <= 0:
+            logger.warning(
+                f"aktualisiere_vertragliche_wochenstunden: Wochenstunden müssen > 0 sein (erhalten: {neue_wochenstunden_int})"
+            )
+            return {"error": "Wochenstunden müssen größer als 0 sein"}
+
+        gueltig_ab_datum = _normalize_to_date(gueltig_ab) if gueltig_ab else date.today()
+        if gueltig_ab_datum is None:
+            logger.warning(
+                f"aktualisiere_vertragliche_wochenstunden: Ungültiges Datum '{gueltig_ab}', verwende heutiges Datum"
+            )
+            gueltig_ab_datum = date.today()
+
+        def _db_op():
+            nutzer = session.get(mitarbeiter, ziel_id)
+            if not nutzer:
+                return {"error": "Nutzer nicht gefunden"}
+
+            alte_wochenstunden = nutzer.vertragliche_wochenstunden
+            nutzer.vertragliche_wochenstunden = neue_wochenstunden_int
+
+            historie_stmt = select(VertragswochenstundenHistorie).where(
+                (VertragswochenstundenHistorie.mitarbeiter_id == ziel_id) &
+                (VertragswochenstundenHistorie.gueltig_ab == gueltig_ab_datum)
+            )
+            historie_eintrag = session.execute(historie_stmt).scalar_one_or_none()
+
+            if historie_eintrag:
+                historie_eintrag.wochenstunden = neue_wochenstunden_int
+            else:
+                session.add(
+                    VertragswochenstundenHistorie(
+                        mitarbeiter_id=ziel_id,
+                        gueltig_ab=gueltig_ab_datum,
+                        wochenstunden=neue_wochenstunden_int,
+                    )
+                )
+
+            logger.info(
+                "aktualisiere_vertragliche_wochenstunden: Nutzer %s von %s auf %s Stunden (gültig ab %s)",
+                ziel_id,
+                alte_wochenstunden,
+                neue_wochenstunden_int,
+                gueltig_ab_datum,
+            )
+
+            return {
+                "alte_wochenstunden": alte_wochenstunden,
+                "neue_wochenstunden": neue_wochenstunden_int,
+                "gueltig_ab": gueltig_ab_datum,
+            }
+
+        result = self._safe_db_operation(_db_op)
+
+        if isinstance(result, dict) and result.get("error"):
+            return result
+
+        if ziel_id == self.aktueller_nutzer_id:
+            self.aktueller_nutzer_vertragliche_wochenstunden = neue_wochenstunden_int
+
+        return result
+
+    def aktualisiere_ampelgrenzen(self, neuer_gruenwert, neuer_rotwert, mitarbeiter_id=None):
+        """Aktualisiert die Ampelgrenzen für einen Nutzer."""
+        ziel_id = mitarbeiter_id or self.aktueller_nutzer_id
+        if ziel_id is None:
+            logger.warning("aktualisiere_ampelgrenzen: Kein Zielnutzer angegeben")
+            return {"error": "Kein Nutzer angegeben"}
+
+        if not session:
+            logger.error("aktualisiere_ampelgrenzen: Keine DB-Session verfügbar")
+            return {"error": "Keine DB-Session"}
+
+        try:
+            gruen_int = int(neuer_gruenwert)
+            rot_int = int(neuer_rotwert)
+        except (TypeError, ValueError):
+            logger.warning(
+                "aktualisiere_ampelgrenzen: Ungültige Ampelwerte (grün=%s, rot=%s)",
+                neuer_gruenwert,
+                neuer_rotwert,
+            )
+            return {"error": "Ampelwerte müssen ganze Zahlen sein"}
+
+        if rot_int >= gruen_int:
+            logger.warning(
+                "aktualisiere_ampelgrenzen: Roter Grenzwert (%s) muss kleiner sein als grüner (%s)",
+                rot_int,
+                gruen_int,
+            )
+            return {"error": "Roter Grenzwert muss kleiner als grüner sein"}
+
+        def _db_op():
+            nutzer = session.get(mitarbeiter, ziel_id)
+            if not nutzer:
+                return {"error": "Nutzer nicht gefunden"}
+
+            alt_gruen = nutzer.ampel_grün
+            alt_rot = nutzer.ampel_rot
+
+            nutzer.ampel_grün = gruen_int
+            nutzer.ampel_rot = rot_int
+
+            logger.info(
+                "aktualisiere_ampelgrenzen: Nutzer %s Ampelgrün von %s auf %s, Ampelrot von %s auf %s",
+                ziel_id,
+                alt_gruen,
+                gruen_int,
+                alt_rot,
+                rot_int,
+            )
+
+            return {"ampel_gruen": gruen_int, "ampel_rot": rot_int}
+
+        result = self._safe_db_operation(_db_op)
+
+        if isinstance(result, dict) and result.get("error"):
+            return result
+
+        if ziel_id == self.aktueller_nutzer_id:
+            self.aktueller_nutzer_ampel_grün = gruen_int
+            self.aktueller_nutzer_ampel_rot = rot_int
+
+        return result
 
     def set_ampel_farbe(self):
         try:
@@ -623,6 +915,44 @@ class ModellTrackTime():
 
         result = self._safe_db_operation(_db_op)
         return 0 if isinstance(result, dict) and "error" in result else (result or 0)
+
+    def hat_bereits_5_tage_gearbeitet_in_woche(self, datum_pruefen: date) -> bool:
+        """
+        Prüft, ob der Nutzer bereits an 5 verschiedenen Tagen in der Woche des angegebenen Datums gearbeitet hat.
+        Verwendet für Minderjährige (max. 5 Arbeitstage/Woche laut ArbZG).
+        
+        Args:
+            datum_pruefen: Das Datum, dessen Woche geprüft werden soll
+            
+        Returns:
+            True wenn bereits 5 oder mehr Tage mit Stempeln in der Woche existieren, sonst False
+        """
+        if self.aktueller_nutzer_id is None or not session:
+            return False
+        
+        try:
+            # Wochenanfang (Montag) und -ende (Sonntag) berechnen
+            wochentag = datum_pruefen.weekday()  # 0=Montag, 6=Sonntag
+            wochenanfang = datum_pruefen - timedelta(days=wochentag)
+            wochenende = wochenanfang + timedelta(days=6)
+            
+            # Alle unterschiedlichen Tage mit Stempeln in dieser Woche zählen
+            stmt = select(Zeiteintrag.datum).distinct().where(
+                (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Zeiteintrag.datum >= wochenanfang) &
+                (Zeiteintrag.datum <= wochenende)
+            )
+            
+            tage_mit_stempeln = session.execute(stmt).scalars().all()
+            anzahl_arbeitstage = len(tage_mit_stempeln)
+            
+            logger.debug(f"Woche {wochenanfang} bis {wochenende}: {anzahl_arbeitstage} Tage mit Stempeln gefunden")
+            
+            return anzahl_arbeitstage >= 5
+            
+        except SQLAlchemyError as e:
+            logger.error(f"DB-Fehler in hat_bereits_5_tage_gearbeitet_in_woche: {e}", exc_info=True)
+            return False
 
     def get_krankheitstage_monat(self, jahr, monat):
         """
@@ -1015,8 +1345,12 @@ class ModellTrackTime():
                     i += 1
         logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: gearbeitete (zuvor angerechnete) Zeit am {datum}: {arbeitstag}")
 
-        # Vertragliche tägliche Arbeitszeit
-        taegliche_arbeitszeit = timedelta(hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
+        wochenstunden = hole_wochenstunden_am_datum(
+            self.aktueller_nutzer_id,
+            datum,
+            self.aktueller_nutzer_vertragliche_wochenstunden,
+        )
+        taegliche_arbeitszeit = berechne_taegliche_sollzeit(wochenstunden)
         
         # Fall 1: Validierte Einträge existieren UND keine Fehlstempel-Benachrichtigung
         # -> Gleitzeit aus validierten Einträgen zurückrechnen
@@ -1395,14 +1729,12 @@ class ModellTrackTime():
 
             logger.info(f"checke_arbeitstage: {len(fehlende_tage)} fehlende Arbeitstage gefunden: {fehlende_tage}")
 
-            # Validierung der Division
+            fallback_sollstunden = None
             if not self.aktueller_nutzer_vertragliche_wochenstunden or self.aktueller_nutzer_vertragliche_wochenstunden < 0:
-                logger.warning(f"checke_arbeitstage: Ungültige Wochenstunden ({self.aktueller_nutzer_vertragliche_wochenstunden}) für Nutzer {self.aktueller_nutzer_id}.")
-                tägliche_arbeitszeit = timedelta(hours=8) # Fallback auf 8h
-            else:
-                tägliche_arbeitszeit = timedelta(hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
-
-            logger.debug(f"checke_arbeitstage: Tägliche Arbeitszeit berechnet: {tägliche_arbeitszeit}")
+                logger.warning(
+                    f"checke_arbeitstage: Ungültige Wochenstunden ({self.aktueller_nutzer_vertragliche_wochenstunden}) für Nutzer {self.aktueller_nutzer_id}."
+                )
+                fallback_sollstunden = 8
 
             abgezogene_tage = []
             for tag in fehlende_tage:
@@ -1415,6 +1747,18 @@ class ModellTrackTime():
 
                 if not exist_urlaub:
                     logger.debug(f"checke_arbeitstage: Keine Abwesenheit für {tag}, ziehe Gleitzeit ab")
+                    wochenstunden_tag = hole_wochenstunden_am_datum(
+                        self.aktueller_nutzer_id,
+                        tag,
+                        self.aktueller_nutzer_vertragliche_wochenstunden,
+                    )
+                    tägliche_arbeitszeit = berechne_taegliche_sollzeit(
+                        wochenstunden_tag,
+                        fallback_stunden=fallback_sollstunden,
+                    )
+                    logger.debug(
+                        f"checke_arbeitstage: Tägliche Arbeitszeit für {tag}: {tägliche_arbeitszeit} (Wochenstunden: {wochenstunden_tag})"
+                    )
                     # Gekapselte Operation für Gleitzeit-Update UND Benachrichtigung
                     def _db_op():
                         # Prüfen, ob Benachrichtigung schon existiert (Atomarität)
@@ -1477,26 +1821,46 @@ class ModellTrackTime():
 
             letzter_login = nutzer.letzter_login
             gestern = date.today() - timedelta(days=1)
-            logger.debug(f"checke_stempel: Prüfe Zeitraum von {letzter_login} bis {gestern}")
+            
+            # Prüfe alle Tage, die Stempel haben (nicht nur ab letzter_login)
+            # um auch nachgetragene Stempel zu erfassen
+            stmt_dates = select(Zeiteintrag.datum).distinct().where(
+                (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Zeiteintrag.datum <= gestern)
+            )
+            tage_mit_stempeln = set(session.execute(stmt_dates).scalars().all())
+            
+            # Kombiniere mit dem erwarteten Zeitraum (letzter_login bis gestern)
+            tag = letzter_login
+            alle_zu_pruefenden_tage = set()
+            while tag <= gestern:
+                if tag.weekday() < 5:
+                    alle_zu_pruefenden_tage.add(tag)
+                tag += timedelta(days=1)
+            
+            # Füge auch alle Tage mit Stempeln hinzu (für nachgetragene Stempel)
+            # Wichtig: Auch Wochenend-Stempel sollen geprüft werden!
+            alle_zu_pruefenden_tage.update(tage_mit_stempeln)
+            
+            logger.debug(f"checke_stempel: Prüfe {len(alle_zu_pruefenden_tage)} Tage")
 
             ungerade_tage = []
-            tag = letzter_login
-            while tag <= gestern:
-                if tag.weekday() < 5:  
-                    stmt = select(Zeiteintrag).where(
-                        (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
-                        (Zeiteintrag.datum == tag)
-                    )
-                    stempel = session.execute(stmt).scalars().all()
-                    stempel_anzahl = len(stempel)
-                    
-                    if stempel_anzahl % 2 != 0:
-                        ungerade_tage.append(tag)
-                        logger.debug(f"checke_stempel: Ungerade Stempelanzahl ({stempel_anzahl}) für {tag}")
-                    else:
-                        logger.debug(f"checke_stempel: Gerade Stempelanzahl ({stempel_anzahl}) für {tag}")
-                tag += timedelta(days=1)
-
+            for tag in sorted(alle_zu_pruefenden_tage):
+                # Prüfe ALLE Tage, nicht nur Werktage
+                # (auch Wochenend-Stempel sollen auf Vollständigkeit geprüft werden)
+                stmt = select(Zeiteintrag).where(
+                    (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+                    (Zeiteintrag.datum == tag)
+                )
+                stempel = session.execute(stmt).scalars().all()
+                stempel_anzahl = len(stempel)
+                
+                if stempel_anzahl % 2 != 0:
+                    ungerade_tage.append(tag)
+                    logger.debug(f"checke_stempel: Ungerade Stempelanzahl ({stempel_anzahl}) für {tag}")
+                else:
+                    logger.debug(f"checke_stempel: Gerade Stempelanzahl ({stempel_anzahl}) für {tag}")
+            
             logger.info(f"checke_stempel: {len(ungerade_tage)} Tage mit ungerader Stempelanzahl gefunden: {ungerade_tage}")
 
             self.feedback_stempel = f"An den Tagen {ungerade_tage} fehlt ein Stempel, bitte tragen sie diesen nach"
@@ -1568,8 +1932,12 @@ class ModellTrackTime():
                 logger.error(f"checke_ruhezeiten: Nutzer {self.aktueller_nutzer_id} nicht gefunden.")
                 return
 
+            # Prüfe Stempel vom letzter_login bis gestern (nicht nur gestern)
+            start_datum = nutzer.letzter_login if nutzer.letzter_login else gestern - timedelta(days=30)
+            
             stmt = select(Zeiteintrag).where(
                 (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Zeiteintrag.datum >= start_datum) &
                 (Zeiteintrag.datum <= gestern)
             ).order_by(Zeiteintrag.datum, Zeiteintrag.zeit)
             einträge = session.scalars(stmt).all()
@@ -1593,9 +1961,11 @@ class ModellTrackTime():
                 if tag_morgen > gestern:
                     break
 
-                # Original-Logik: überspringt Wochenenden. Ist das korrekt?
-                # Ja, Ruhezeit zwischen Fr und Mo ist irrelevant.
-                if tag_heute.weekday() >= 5 or tag_morgen.weekday() >= 5:
+                # Überspringe nur aufeinanderfolgende Wochenend-Tage (Sa→So)
+                # oder wenn mehr als 1 Tag dazwischen liegt (z.B. Fr→Mo)
+                tage_dazwischen = (tag_morgen - tag_heute).days
+                if tage_dazwischen > 1:
+                    # Mehr als 1 Tag zwischen den Schichten (z.B. Fr→Mo)
                     continue
                 
                 # Ruhezeit-Anforderung basierend auf dem *ersten* Tag (tag_heute)
@@ -1754,16 +2124,26 @@ class ModellTrackTime():
                 else:
                     i += 1  
 
-            # Validierung der Division
+            fallback_sollstunden = None
             if not self.aktueller_nutzer_vertragliche_wochenstunden or self.aktueller_nutzer_vertragliche_wochenstunden <= 0:
-                 logger.error(f"berechne_gleitzeit: Ungültige Wochenstunden ({self.aktueller_nutzer_vertragliche_wochenstunden}) für Nutzer {self.aktueller_nutzer_id}.")
-                 return # Berechnung abbrechen
-            
-            tägliche_arbeitszeit = timedelta(hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
+                logger.warning(
+                    f"berechne_gleitzeit: Ungültige aktuelle Wochenstunden ({self.aktueller_nutzer_vertragliche_wochenstunden}) für Nutzer {self.aktueller_nutzer_id}, verwende Historie/Fallback."
+                )
+                fallback_sollstunden = 8
 
             gleitzeit_diff_total = timedelta()
 
             for datum, arbeitszeit in arbeitstage.items():
+                wochenstunden_tag = hole_wochenstunden_am_datum(
+                    self.aktueller_nutzer_id,
+                    datum,
+                    self.aktueller_nutzer_vertragliche_wochenstunden,
+                )
+                tägliche_arbeitszeit = berechne_taegliche_sollzeit(
+                    wochenstunden_tag,
+                    fallback_stunden=fallback_sollstunden,
+                )
+
                 # Prüfen, ob für den Tag eine "Fehlstempel"-Benachrichtigung (Code 1) existiert
                 exists_stmt = select(Benachrichtigungen).where(
                     (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
@@ -1795,7 +2175,10 @@ class ModellTrackTime():
                     gleitzeit_diff_total += arbeitszeit
                     logger.debug(f"Tag {datum}: Bereits validierte Einträge vorhanden – füge nur zusätzliche Arbeitszeit {arbeitszeit} hinzu.")
                 else:
-                    differenz = arbeitszeit - tägliche_arbeitszeit
+                    if tägliche_arbeitszeit > timedelta():
+                        differenz = arbeitszeit - tägliche_arbeitszeit
+                    else:
+                        differenz = arbeitszeit
                     gleitzeit_diff_total += differenz
                     logger.debug(f"Tag {datum}: Erster Lauf – füge Differenz {differenz} (Arbeitszeit {arbeitszeit} - Soll {tägliche_arbeitszeit}) hinzu.")
             
@@ -1838,12 +2221,12 @@ class ModellTrackTime():
             if not nutzer:
                 return {"error": "Nutzer nicht gefunden"}
 
-            # Validierung der Division
+            fallback_sollstunden = None
             if not self.aktueller_nutzer_vertragliche_wochenstunden or self.aktueller_nutzer_vertragliche_wochenstunden <= 0:
-                 logger.error(f"berechne_durchschnittliche_gleitzeit: Ungültige Wochenstunden ({self.aktueller_nutzer_vertragliche_wochenstunden}).")
-                 return {"error": "Ungültige Wochenstunden"}
-            
-            tägliche_arbeitszeit = timedelta(hours=(self.aktueller_nutzer_vertragliche_wochenstunden / 5))
+                logger.warning(
+                    f"berechne_durchschnittliche_gleitzeit: Ungültige aktuelle Wochenstunden ({self.aktueller_nutzer_vertragliche_wochenstunden}), verwende Historie/Fallback."
+                )
+                fallback_sollstunden = 8
 
             stmt = select(Zeiteintrag).where(
                 (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
@@ -1873,6 +2256,16 @@ class ModellTrackTime():
             berücksichtigte_tage = []
 
             for tag in arbeitstage_werktage:
+                wochenstunden_tag = hole_wochenstunden_am_datum(
+                    self.aktueller_nutzer_id,
+                    tag,
+                    self.aktueller_nutzer_vertragliche_wochenstunden,
+                )
+                tägliche_arbeitszeit = berechne_taegliche_sollzeit(
+                    wochenstunden_tag,
+                    fallback_stunden=fallback_sollstunden,
+                )
+
                 if tag in arbeitstage:
                     differenz = arbeitstage[tag] - tägliche_arbeitszeit
                     gleitzeit_differenzen.append(differenz)
@@ -2053,6 +2446,15 @@ class ModellLogin():
             ) 
         
             session.add(neuer_nutzer)
+            session.flush()  # Mitarbeiter-ID für Historieneintrag sicherstellen
+
+            historien_eintrag = VertragswochenstundenHistorie(
+                mitarbeiter_id=neuer_nutzer.mitarbeiter_id,
+                gueltig_ab=date.today(),
+                wochenstunden=wochenstunden_int,
+            )
+            session.add(historien_eintrag)
+
             session.commit()
             self.neuer_nutzer_rückmeldung = "Der Account wurde erfolgreich angelegt" 
             logger.info(f"Neuer Nutzer angelegt: {self.neuer_nutzer_name}")
