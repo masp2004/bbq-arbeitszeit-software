@@ -706,8 +706,6 @@ class MainView(Screen):
 
         self.settings_horizontal_layout = BoxLayout(
             orientation='horizontal',
-            spacing=dp(24),
-            padding=dp(16)
         )
 
         # Passwort ändern Layout
@@ -780,7 +778,7 @@ class MainView(Screen):
         self.settings_layout_left = BoxLayout(
             orientation='vertical',
             padding=dp(16),
-            spacing=dp(16),
+            spacing=dp(12),
             size_hint=(0.45, None)
         )
         self.settings_layout_left.bind(
@@ -906,7 +904,7 @@ class MainView(Screen):
             yes_text: Text für den Ja-Button (Standard: "OK")
             no_text: Text für den Nein-Button (optional, wenn None wird nur ein Button angezeigt)
         """
-        layout = BoxLayout(orientation="vertical", padding=10, spacing=15)
+        layout = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(12))
 
         # Label mit Umbruch
         message_label = Label(
@@ -922,13 +920,13 @@ class MainView(Screen):
         layout.add_widget(message_label)
 
         # Button-Layout
-        button_layout = BoxLayout(spacing=10, size_hint_y=None, height=40)
-        
+        button_layout = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(32))
+
         popup = Popup(
             title=title,
             content=layout,
             size_hint=(None, None),
-            size=(400, 200),
+            size=(dp(470), dp(160)),
             auto_dismiss=False
         )
 
@@ -968,7 +966,7 @@ class MainView(Screen):
 
         def adjust_popup_height(*args):
             # Höhe anpassen
-            popup.height = message_label.height + 150
+            popup.height = message_label.height + dp(120)
 
         message_label.bind(height=adjust_popup_height)
         popup.open()
@@ -1444,7 +1442,7 @@ class MonthCalendar(BoxLayout):
         """
 
         # Layout für eine Zeile (Zeit + optional Buttons)
-        row_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=30, spacing=10)
+        row_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(24), spacing=dp(8))
 
 
         if is_problematic:
@@ -1477,7 +1475,7 @@ class MonthCalendar(BoxLayout):
         )
         # Button-Event binden: Ruft open_edit_popup mit stempel_id, date_str und aktueller Zeit auf
         edit_button.bind(on_release=lambda btn: self.open_edit_popup(stempel_id, date_str, stempelzeit))
-        edit_wrapper = AnchorLayout(size_hint_x=None, width=50)
+        edit_wrapper = AnchorLayout(size_hint_x=None, width=dp(40))
         edit_wrapper.add_widget(edit_button)
 
 
@@ -1489,7 +1487,7 @@ class MonthCalendar(BoxLayout):
         )
         # Button-Event binden: Ruft open_delete_popup mit stempel_id und date_str auf
         delete_button.bind(on_release=lambda btn: self.open_delete_popup(stempel_id, date_str, stempelzeit))
-        delete_wrapper = AnchorLayout(size_hint_x=None, width=50)
+        delete_wrapper = AnchorLayout(size_hint_x=None, width=dp(40))
         delete_wrapper.add_widget(delete_button)
 
         row_layout.add_widget(times_label)
@@ -1514,13 +1512,13 @@ class MonthCalendar(BoxLayout):
             time_str (str): Aktuelle Zeit als String (Format: "HH:MM")
         """
 
-        popup_layout = BoxLayout(orientation="vertical", padding=10, spacing=20)
+        popup_layout = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(16))
 
         # Header
-        header_row = BoxLayout(size_hint_y=None, height=40, spacing=15)
-        header_row.add_widget(Label(text="Zeitstempel:", size_hint=(None, None), size=(100, 35), 
-                                    text_size=(100, 35), halign="left", valign="middle"))
-        time_input = TextInput(text=time_str, multiline=False, size_hint=(None, None), size=(80, 35), readonly=True)
+        header_row = BoxLayout(size_hint_y=None, height=dp(32), spacing=dp(12))
+        header_row.add_widget(Label(text="Zeitstempel:", size_hint=(None, None), size=(dp(80), dp(28)), 
+                                    text_size=(dp(80), dp(28)), halign="left", valign="middle"))
+        time_input = TextInput(text=time_str, multiline=False, size_hint=(None, None), size=(dp(64), dp(28)), readonly=True)
         
         # Time Picker binden
         def show_time_picker_for_edit(instance, value):
@@ -1535,11 +1533,11 @@ class MonthCalendar(BoxLayout):
         popup_layout.add_widget(header_row)
 
         # Speichern-Button
-        save_btn = Button(text="Speichern", size_hint_y=None, height=40)
+        save_btn = Button(text="Speichern", size_hint_y=None, height=dp(32))
         
         # Popup erstellen
         popup = Popup(title=f"Stempel bearbeiten - {date_str}", content=popup_layout, 
-                     size_hint=(None, None), size=(250, 200))
+                     size_hint=(None, None), size=(dp(200), dp(160)))
         
         # Speichern-Button-Event: Ruft Controller-Methode auf
         def on_save(*args):
@@ -1550,7 +1548,7 @@ class MonthCalendar(BoxLayout):
         
         save_btn.bind(on_release=on_save)
         popup_layout.add_widget(save_btn)
-        
+
         popup.open()
 
 
@@ -1679,9 +1677,9 @@ class DayCell(BoxLayout):
             is_sick (bool): True wenn Krankheitstag
         """
 
-        super().__init__(orientation="vertical", padding=2, spacing=2)
+        super().__init__(orientation="vertical", padding=dp(1.6), spacing=dp(1.6))
         self.size_hint_y = None
-        self.height = 80
+        self.height = dp(64)
 
         # Priorität der Hintergrundfarben: Krankheit > Urlaub > Feiertag > Wochenende > Normal
         if is_sick:
