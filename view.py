@@ -1681,12 +1681,8 @@ class DayCell(BoxLayout):
         self.size_hint_y = None
         self.height = dp(64)
 
-        # Priorität der Hintergrundfarben: Krankheit > Urlaub > Feiertag > Wochenende > Normal
-        if is_sick:
-            bg_color = (1, 0.9, 0.7, 1)  # Hellorange für Krankheit
-        elif is_vacation:
-            bg_color = (0.8, 0.9, 1, 1)  # Hellblau für Urlaub
-        elif is_holiday:
+        # Priorität der Hintergrundfarben: Feiertag > Wochenende > Normal
+        if is_holiday:
             bg_color = (1, 0.8, 0.8, 1)  # Rosa für Feiertag
         elif is_weekend:
             bg_color = (0.9, 0.9, 0.9, 1)  # Grau für Wochenende
@@ -1727,6 +1723,11 @@ class DayCell(BoxLayout):
         # Bereich für Einträge
         self.entries_box = BoxLayout(orientation="vertical", spacing=dp(0.8))
         self.add_widget(self.entries_box)
+
+        if is_sick:
+            self.add_entry("Krank", (1, 0.9, 0.7, 1))
+        elif is_vacation:
+            self.add_entry("Urlaub", (0.8, 0.9, 1, 1))
 
     def _update_graphics(self, *args):
         """
