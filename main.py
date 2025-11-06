@@ -10,7 +10,7 @@ Die Anwendung folgt dem MVC-Pattern:
 - Controller: controller.py (Event-Handling und Koordination)
 
 Autor: Velqor
-Version: 2.0
+Version: 0.3
 """
 
 import os

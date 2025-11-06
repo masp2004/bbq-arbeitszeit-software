@@ -21,7 +21,7 @@ Funktionen:
 - Datenbank-Management
 
 Autor: Velqor
-Version: 2.0
+Version: 0.3
 """
 
 from sqlalchemy import Column, Integer, String, Date, create_engine, select, Time, Boolean, ForeignKey, UniqueConstraint, CheckConstraint, Float
@@ -1020,28 +1020,49 @@ class ModellTrackTime():
                 nutzer.vertragliche_wochenstunden,
             )
             tägliche_arbeitszeit = berechne_taegliche_sollzeit(wochenstunden)
-            if tägliche_arbeitszeit > timedelta():
-                gleitzeit_diff = arbeitszeit_summe - tägliche_arbeitszeit
-            else:
-                gleitzeit_diff = arbeitszeit_summe
-
-            # Prüfen, ob für diesen Tag eine Fehlstempel-Benachrichtigung (Code 1) existiert
-            # Wenn ja, zeige die negative tägliche Sollzeit als Gleitzeit an
-            benachrichtigung_stmt = select(Benachrichtigungen).where(
-                (Benachrichtigungen.mitarbeiter_id == ausgewählte_mitarbeiter_id) &
-                (Benachrichtigungen.datum == date_obj) &
-                (Benachrichtigungen.benachrichtigungs_code == 1)
-            )
-            hat_fehlstempel_benachrichtigung = session.execute(benachrichtigung_stmt).scalar_one_or_none()
             
-            if hat_fehlstempel_benachrichtigung:
-                # Bei fehlenden Stempeln wurde die tägliche Sollzeit abgezogen
-                # Zeige dies als negative tägliche Sollzeit an
+            # === Gleitzeit-Berechnung für Kalender-Anzeige ===
+            
+            # Fall 1: Ungerade Anzahl Stempel (nur 1, 3, 5, etc.)
+            # Zeige 0 Stunden, da kein vollständiges Paar vorhanden ist
+            if len(einträge) % 2 != 0:
+                self.gleitzeit_bestimmtes_datum_stunden = "Stempel vervollständigen um Gleitzeit zu berechnen"
+                logger.debug(f"get_zeiteinträge: Ungerade Stempelanzahl für {date_obj}, Gleitzeit: 0h")
+            
+            # Fall 2: Fehlstempel-Benachrichtigung existiert (Code 1)
+            # Tag wurde als fehlend markiert, Sollzeit wurde bereits abgezogen
+            elif hat_fehlstempel_benachrichtigung := session.execute(
+                select(Benachrichtigungen).where(
+                    (Benachrichtigungen.mitarbeiter_id == ausgewählte_mitarbeiter_id) &
+                    (Benachrichtigungen.datum == date_obj) &
+                    (Benachrichtigungen.benachrichtigungs_code == 1)
+                )
+            ).scalar_one_or_none():
+                # Zeige negative tägliche Sollzeit an
                 taegliche_sollzeit_stunden = tägliche_arbeitszeit.total_seconds() / 3600
                 self.gleitzeit_bestimmtes_datum_stunden = -round(taegliche_sollzeit_stunden, 2)
-                logger.debug(f"get_zeiteinträge: Fehlstempel-Benachrichtigung für {date_obj} gefunden, Gleitzeit: {self.gleitzeit_bestimmtes_datum_stunden}h")
+                logger.debug(f"get_zeiteinträge: Fehlstempel-Benachrichtigung für {date_obj}, Gleitzeit: {self.gleitzeit_bestimmtes_datum_stunden}h")
+            
+            # Fall 3: 6. oder späterer Arbeitstag in der Woche
+            # Nur Arbeitszeit addieren, KEINE Sollzeit abziehen
+            elif self.ist_sechster_arbeitstag_in_woche(date_obj):
+                arbeitszeit_stunden = arbeitszeit_summe.total_seconds() / 3600
+                self.gleitzeit_bestimmtes_datum_stunden = round(arbeitszeit_stunden, 2)
+                logger.debug(f"get_zeiteinträge: 6.+ Arbeitstag {date_obj}, nur Arbeitszeit: {self.gleitzeit_bestimmtes_datum_stunden}h")
+            
+            # Fall 4: Regulärer Tag mit Stempeln
+            # Arbeitszeit - Sollzeit
+            elif einträge:
+                if tägliche_arbeitszeit > timedelta():
+                    gleitzeit_diff = arbeitszeit_summe - tägliche_arbeitszeit
+                else:
+                    gleitzeit_diff = arbeitszeit_summe
+                self.gleitzeit_bestimmtes_datum_stunden = round(gleitzeit_diff.total_seconds() / 3600, 2)
+                logger.debug(f"get_zeiteinträge: Regulärer Tag {date_obj}, Gleitzeit: {self.gleitzeit_bestimmtes_datum_stunden}h")
+            
+            # Fall 5: Keine Stempel
             else:
-                self.gleitzeit_bestimmtes_datum_stunden = round(gleitzeit_diff.total_seconds() / 3600, 2) if einträge else 0.0
+                self.gleitzeit_bestimmtes_datum_stunden = 0.0
             
             self.zeiteinträge_bestimmtes_datum = einträge_mit_validierung
 
@@ -1547,6 +1568,73 @@ class ModellTrackTime():
             logger.error(f"DB-Fehler in hat_bereits_5_tage_gearbeitet_in_woche: {e}", exc_info=True)
             return False
 
+    def ist_sechster_arbeitstag_in_woche(self, datum_pruefen: date) -> bool:
+        """
+        Prüft, ob das angegebene Datum der 6. oder spätere Arbeitstag in der Woche ist.
+        
+        Zählt alle Arbeitstage in der Woche (Mo-So) VOR dem zu prüfenden Datum.
+        Als Arbeitstag gilt:
+        - Tage mit Zeiteinträgen (Stempel)
+        - Tage mit Code 1 Benachrichtigung (fehlende Stempel, Sollzeit bereits abgezogen)
+        
+        Args:
+            datum_pruefen: Das zu prüfende Datum
+            
+        Returns:
+            True wenn dies der 6. oder spätere Arbeitstag in der Woche ist, sonst False
+            
+        Note:
+            An solchen Tagen wird keine tägliche Sollarbeitszeit mehr abgezogen,
+            da diese bereits an den ersten 5 Tagen verrechnet wurde.
+        """
+        if self.aktueller_nutzer_id is None or not session:
+            return False
+        
+        try:
+            # Wochenanfang (Montag) und -ende (Sonntag) berechnen
+            wochentag = datum_pruefen.weekday()  # 0=Montag, 6=Sonntag
+            wochenanfang = datum_pruefen - timedelta(days=wochentag)
+            wochenende = wochenanfang + timedelta(days=6)
+            
+            # 1) Alle unterschiedlichen Tage mit Stempeln in dieser Woche zählen (VOR dem zu prüfenden Datum)
+            stmt_stempel = select(Zeiteintrag.datum).distinct().where(
+                (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Zeiteintrag.datum >= wochenanfang) &
+                (Zeiteintrag.datum <= wochenende) &
+                (Zeiteintrag.datum < datum_pruefen)  # NUR Tage VOR dem zu prüfenden Datum
+            )
+            tage_mit_stempeln = set(session.execute(stmt_stempel).scalars().all())
+            
+            # 2) Alle Tage mit Code 1 Benachrichtigungen in dieser Woche zählen (VOR dem zu prüfenden Datum)
+            # Diese Tage hatten keine Stempel, aber Sollzeit wurde bereits abgezogen
+            stmt_code1 = select(Benachrichtigungen.datum).distinct().where(
+                (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Benachrichtigungen.benachrichtigungs_code == 1) &
+                (Benachrichtigungen.datum >= wochenanfang) &
+                (Benachrichtigungen.datum <= wochenende) &
+                (Benachrichtigungen.datum < datum_pruefen)  # NUR Tage VOR dem zu prüfenden Datum
+            )
+            tage_mit_code1 = set(session.execute(stmt_code1).scalars().all())
+            
+            # 3) Vereinigung: Alle Arbeitstage = Tage mit Stempeln ODER Code 1
+            alle_arbeitstage = tage_mit_stempeln | tage_mit_code1
+            anzahl_arbeitstage_vorher = len(alle_arbeitstage)
+            
+            # Wenn bereits 5 oder mehr Tage davor gearbeitet wurden, ist datum_pruefen der 6.+ Tag
+            ist_sechster = anzahl_arbeitstage_vorher >= 5
+            
+            logger.debug(
+                f"Tag {datum_pruefen}: {anzahl_arbeitstage_vorher} Arbeitstage vorher in Woche "
+                f"({len(tage_mit_stempeln)} mit Stempeln, {len(tage_mit_code1)} mit Code 1) → "
+                f"{'6.+ Tag' if ist_sechster else 'regulärer Tag'}"
+            )
+            
+            return ist_sechster
+            
+        except SQLAlchemyError as e:
+            logger.error(f"DB-Fehler in ist_sechster_arbeitstag_in_woche: {e}", exc_info=True)
+            return False
+
     def get_krankheitstage_monat(self, jahr, monat):
         """
         Holt alle Krankheitstage für einen bestimmten Monat und Mitarbeiter.
@@ -1858,6 +1946,35 @@ class ModellTrackTime():
             logger.error(f"DB-Fehler in get_stamps_for_today: {e}", exc_info=True)
             return []
 
+    def get_stamps_for_date(self, target_date):
+        """
+        Holt alle Zeitstempel für ein bestimmtes Datum des aktuellen Nutzers.
+        
+        Parameters:
+            target_date (date): Das Datum für das die Stempel abgefragt werden sollen.
+            
+        Returns:
+            Liste von Zeiteintrag-Objekten, sortiert nach Zeit.
+            Leere Liste bei Fehler oder wenn kein Nutzer eingeloggt ist.
+            
+        Note:
+            Wird für die 6-Tage-Warnung bei Nachtrag-Funktionen verwendet.
+            Ermöglicht die Prüfung ob an einem Datum bereits Stempel existieren.
+        """
+        if not self.aktueller_nutzer_id: return []
+        if not session: return []
+
+        try:
+            stmt = select(Zeiteintrag).where(
+                (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+                (Zeiteintrag.datum == target_date)
+            ).order_by(Zeiteintrag.zeit)
+            einträge = session.scalars(stmt).all()
+            return einträge
+        except SQLAlchemyError as e:
+            logger.error(f"DB-Fehler in get_stamps_for_date für {target_date}: {e}", exc_info=True)
+            return []
+
     def get_stempel_datum_by_id(self, stempel_id):
         """
         Gibt das Datum eines Stempels zurück.
@@ -2102,12 +2219,24 @@ class ModellTrackTime():
         )
         taegliche_arbeitszeit = berechne_taegliche_sollzeit(wochenstunden)
         
+        # === WICHTIG: Prüfen ob der Tag ein 6.+ Arbeitstag in der Woche war ===
+        # Wenn ja, wurde ursprünglich KEINE Sollzeit abgezogen, also auch nicht zurückrechnen!
+        war_sechster_tag = self.ist_sechster_arbeitstag_in_woche(datum)
+        
         # Fall 1: Validierte Einträge existieren UND keine Fehlstempel-Benachrichtigung
         # -> Gleitzeit aus validierten Einträgen zurückrechnen
         if validated_before and not hat_fehlstempel_benachrichtigung:
-            gleitzeit_diff = arbeitstag - taegliche_arbeitszeit
-            gleitzeit_stunden = float(gleitzeit_diff.total_seconds() / 3600)
-            logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: tägliche Sollzeit: {taegliche_arbeitszeit}, Differenz: {gleitzeit_diff} ({gleitzeit_stunden:.2f}h)")
+            # Wenn es ein 6.+ Arbeitstag war, wurde NUR die Arbeitszeit hinzugefügt (keine Sollzeit abgezogen)
+            # → Jetzt auch nur die Arbeitszeit zurückziehen, NICHT "Arbeitszeit - Sollzeit"
+            if war_sechster_tag:
+                gleitzeit_diff = arbeitstag  # Nur Arbeitszeit, KEINE Sollzeit-Verrechnung
+                gleitzeit_stunden = float(gleitzeit_diff.total_seconds() / 3600)
+                logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: 6.+ Tag erkannt - keine Sollzeit-Verrechnung, nur Arbeitszeit: {arbeitstag} ({gleitzeit_stunden:.2f}h)")
+            else:
+                # Regulärer Tag: Differenz aus (Arbeitszeit - Sollzeit) zurückrechnen
+                gleitzeit_diff = arbeitstag - taegliche_arbeitszeit
+                gleitzeit_stunden = float(gleitzeit_diff.total_seconds() / 3600)
+                logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: Regulärer Tag - tägliche Sollzeit: {taegliche_arbeitszeit}, Differenz: {gleitzeit_diff} ({gleitzeit_stunden:.2f}h)")
 
             alte_gleitzeit = float(self.aktueller_nutzer_gleitzeit or 0)
             self.aktueller_nutzer_gleitzeit = alte_gleitzeit - gleitzeit_stunden
@@ -2116,14 +2245,21 @@ class ModellTrackTime():
         
         # Fall 2: Fehlstempel-Benachrichtigung existiert (egal ob validierte Einträge vorhanden)
         # -> Die tägliche Sollzeit wurde bereits abgezogen, jetzt wieder hinzufügen
+        # WICHTIG: An einem 6.+ Arbeitstag wird KEINE Sollzeit abgezogen, also auch nicht wieder hinzufügen!
         elif hat_fehlstempel_benachrichtigung:
-            gleitzeit_stunden = float(taegliche_arbeitszeit.total_seconds() / 3600)
-            alte_gleitzeit = float(self.aktueller_nutzer_gleitzeit or 0)
-            self.aktueller_nutzer_gleitzeit = alte_gleitzeit + gleitzeit_stunden  # HINZUFÜGEN!
-            nutzer.gleitzeit = self.aktueller_nutzer_gleitzeit
-            logger.info(f"set_entries_unvalidated_and_revert_gleitzeit: Fehlstempel-Abzug rückgängig gemacht: {alte_gleitzeit:.2f}h + {gleitzeit_stunden:.2f}h = {self.aktueller_nutzer_gleitzeit:.2f}h für {datum}")
+            # Prüfen ob es ein 6.+ Arbeitstag war (sollte bei Code 1 nicht passieren, aber sicherheitshalber prüfen)
+            if war_sechster_tag:
+                # An einem 6.+ Tag wurde nie eine Sollzeit abgezogen, also auch nichts zurückrechnen
+                logger.info(f"set_entries_unvalidated_and_revert_gleitzeit: 6.+ Tag mit Fehlstempel-Benachrichtigung - keine Sollzeit-Anpassung nötig für {datum}")
+            else:
+                # Regulärer Tag: Die Sollzeit wurde abgezogen, jetzt wieder hinzufügen
+                gleitzeit_stunden = float(taegliche_arbeitszeit.total_seconds() / 3600)
+                alte_gleitzeit = float(self.aktueller_nutzer_gleitzeit or 0)
+                self.aktueller_nutzer_gleitzeit = alte_gleitzeit + gleitzeit_stunden  # HINZUFÜGEN!
+                nutzer.gleitzeit = self.aktueller_nutzer_gleitzeit
+                logger.info(f"set_entries_unvalidated_and_revert_gleitzeit: Fehlstempel-Abzug rückgängig gemacht: {alte_gleitzeit:.2f}h + {gleitzeit_stunden:.2f}h = {self.aktueller_nutzer_gleitzeit:.2f}h für {datum}")
             
-            # Benachrichtigung löschen, da jetzt Stempel vorhanden
+            # Benachrichtigung löschen, da jetzt Stempel vorhanden (unabhängig von 6.+ Tag Status)
             try:
                 session.delete(hat_fehlstempel_benachrichtigung)
                 logger.debug(f"set_entries_unvalidated_and_revert_gleitzeit: Fehlstempel-Benachrichtigung (Code 1) für {datum} gelöscht")
@@ -2720,7 +2856,17 @@ class ModellTrackTime():
                 exist_urlaub = session.execute(urlaubs_stmt).scalar_one_or_none()
 
                 if not exist_urlaub:
-                    logger.debug(f"checke_arbeitstage: Keine Abwesenheit für {tag}, ziehe Gleitzeit ab")
+                    logger.debug(f"checke_arbeitstage: Keine Abwesenheit für {tag}, prüfe ob Gleitzeit abgezogen werden muss")
+                    
+                    # === WICHTIG: Prüfen ob der Tag ein 6.+ Arbeitstag in der Woche ist ===
+                    # An einem 6.+ Tag wird KEINE Sollzeit abgezogen!
+                    ist_sechster_tag = self.ist_sechster_arbeitstag_in_woche(tag)
+                    
+                    if ist_sechster_tag:
+                        logger.info(f"checke_arbeitstage: {tag} ist 6.+ Arbeitstag - KEINE Sollzeit-Abzug, keine Benachrichtigung")
+                        continue  # Nächsten Tag prüfen
+                    
+                    # Regulärer Tag (1.-5. Arbeitstag): Sollzeit abziehen
                     wochenstunden_tag = hole_wochenstunden_am_datum(
                         self.aktueller_nutzer_id,
                         tag,
@@ -3765,6 +3911,8 @@ class ModellTrackTime():
                     fallback_stunden=fallback_sollstunden,
                 )
 
+                # === SPEZIALFALL 1: Code 1 Benachrichtigung existiert bereits ===
+                # (Tag wurde als fehlend markiert, Sollzeit bereits früher abgezogen)
                 # Prüfen, ob für den Tag eine "Fehlstempel"-Benachrichtigung (Code 1) existiert
                 exists_stmt = select(Benachrichtigungen).where(
                     (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
@@ -3783,6 +3931,8 @@ class ModellTrackTime():
                     )
                     continue
 
+                # === SPEZIALFALL 2: Bereits validierte Einträge vorhanden ===
+                # (Sollzeit wurde bereits früher verrechnet)
                 # NEU: Wenn für diesen Tag bereits validierte Einträge existieren,
                 # dann den Tages-Soll NICHT erneut abziehen, sondern nur die zusätzliche Arbeitszeit addieren.
                 validated_before_stmt = select(Zeiteintrag).where(
@@ -3795,13 +3945,29 @@ class ModellTrackTime():
                 if validated_before:
                     gleitzeit_diff_total += arbeitszeit
                     logger.debug(f"Tag {datum}: Bereits validierte Einträge vorhanden – füge nur zusätzliche Arbeitszeit {arbeitszeit} hinzu.")
+                    continue
+
+                # === SPEZIALFALL 3: 6. Arbeitstag in der Woche ===
+                # An einem 6.+ Arbeitstag wird KEINE Sollarbeitszeit mehr abgezogen,
+                # da die 5-Tage-Woche bereits erfüllt ist. Nur die Arbeitszeit wird addiert.
+                ist_sechster_tag = self.ist_sechster_arbeitstag_in_woche(datum)
+                
+                if ist_sechster_tag:
+                    # 6.+ Tag: Nur Arbeitszeit hinzufügen, KEINE Sollzeit abziehen
+                    gleitzeit_diff_total += arbeitszeit
+                    logger.info(
+                        f"Tag {datum}: 6.+ Arbeitstag in Woche – füge nur Arbeitszeit {arbeitszeit} hinzu (KEINE Sollzeit-Abzug)."
+                    )
+                    continue
+
+                # === NORMALFALL: Erster Durchlauf für diesen Tag ===
+                # Differenz berechnen: Arbeitszeit - Sollzeit
+                if tägliche_arbeitszeit > timedelta():
+                    differenz = arbeitszeit - tägliche_arbeitszeit
                 else:
-                    if tägliche_arbeitszeit > timedelta():
-                        differenz = arbeitszeit - tägliche_arbeitszeit
-                    else:
-                        differenz = arbeitszeit
-                    gleitzeit_diff_total += differenz
-                    logger.debug(f"Tag {datum}: Erster Lauf – füge Differenz {differenz} (Arbeitszeit {arbeitszeit} - Soll {tägliche_arbeitszeit}) hinzu.")
+                    differenz = arbeitszeit
+                gleitzeit_diff_total += differenz
+                logger.debug(f"Tag {datum}: Regulärer Tag – füge Differenz {differenz} (Arbeitszeit {arbeitszeit} - Soll {tägliche_arbeitszeit}) hinzu.")
             
             # Alle benutzten Einträge als validiert markieren
             for e in benutzte_einträge:

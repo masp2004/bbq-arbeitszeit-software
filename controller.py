@@ -345,6 +345,10 @@ class Controller():
             >>> _format_hours_minutes(None)
             "0h 0min"
         """
+        # Prüfen ob es ein String ist (z.B. "Stempel vervollständigen...")
+        if isinstance(hours_float, str):
+            return hours_float
+        
         if hours_float is None:
             return "0h 0min"
         
@@ -825,25 +829,30 @@ class Controller():
         except Exception as e:
             logger.error(f"Fehler bei der Prüfung auf Urlaubstag: {e}", exc_info=True)
 
-        # 2) Sonn-/Feiertagswarnung oder normale Bestätigung
         # 2) Minderjährige: Prüfung auf 6. Arbeitstag in der Woche
+        # WICHTIG: Nur warnen, wenn heute noch KEIN Stempel existiert (erster Stempel des Tages)
         try:
             nutzer = self.model_track_time.get_aktueller_nutzer()
             if nutzer and nutzer.is_minor_on_date(_date.today()):
-                if self.model_track_time.hat_bereits_5_tage_gearbeitet_in_woche(_date.today()):
-                    self.main_view.show_messagebox(
-                        title="Arbeitszeitschutz-Warnung",
-                        message=(
-                            f"ACHTUNG: Sie haben bereits an 5 Tagen in dieser Woche gearbeitet!\n\n"
-                            f"Nach dem Arbeitszeitschutzgesetz dürfen Minderjährige maximal 5 Tage pro Woche arbeiten.\n\n"
-                            f"Möchten Sie trotzdem fortfahren?"
-                        ),
-                        callback_yes=self._stempel_nach_6_tage_warnung,
-                        callback_no=None,
-                        yes_text="Trotzdem fortfahren",
-                        no_text="Abbrechen",
-                    )
-                    return
+                # Prüfen ob heute bereits Stempel existieren
+                stempel_heute = self.model_track_time.get_stamps_for_today()
+                
+                # Nur warnen, wenn heute noch KEINE Stempel vorhanden sind
+                if not stempel_heute:
+                    if self.model_track_time.hat_bereits_5_tage_gearbeitet_in_woche(_date.today()):
+                        self.main_view.show_messagebox(
+                            title="Arbeitszeitschutz-Warnung",
+                            message=(
+                                f"ACHTUNG: Sie haben bereits an 5 Tagen in dieser Woche gearbeitet!\n\n"
+                                f"Nach dem Arbeitszeitschutzgesetz dürfen Minderjährige maximal 5 Tage pro Woche arbeiten.\n\n"
+                                f"Möchten Sie trotzdem fortfahren?"
+                            ),
+                            callback_yes=self._stempel_nach_6_tage_warnung,
+                            callback_no=None,
+                            yes_text="Trotzdem fortfahren",
+                            no_text="Abbrechen",
+                        )
+                        return
         except Exception as e:
             logger.error(f"Fehler bei der Prüfung auf 6. Arbeitstag: {e}", exc_info=True)
 
@@ -893,23 +902,29 @@ class Controller():
             logger.error(f"Fehler bei der Prüfung auf Urlaubstag: {e}", exc_info=True)
         
         # Weiter mit 6-Tage-Prüfung bei Minderjährigen
+        # WICHTIG: Nur warnen, wenn heute noch KEIN Stempel existiert (erster Stempel des Tages)
         try:
             nutzer = self.model_track_time.get_aktueller_nutzer()
             if nutzer and nutzer.is_minor_on_date(_date.today()):
-                if self.model_track_time.hat_bereits_5_tage_gearbeitet_in_woche(_date.today()):
-                    self.main_view.show_messagebox(
-                        title="Arbeitszeitschutz-Warnung",
-                        message=(
-                            f"ACHTUNG: Sie haben bereits an 5 Tagen in dieser Woche gearbeitet!\n\n"
-                            f"Nach dem Arbeitszeitschutzgesetz dürfen Minderjährige maximal 5 Tage pro Woche arbeiten.\n\n"
-                            f"Möchten Sie trotzdem fortfahren?"
-                        ),
-                        callback_yes=self._stempel_nach_6_tage_warnung,
-                        callback_no=None,
-                        yes_text="Trotzdem fortfahren",
-                        no_text="Abbrechen",
-                    )
-                    return
+                # Prüfen ob heute bereits Stempel existieren
+                stempel_heute = self.model_track_time.get_stamps_for_today()
+                
+                # Nur warnen, wenn heute noch KEINE Stempel vorhanden sind
+                if not stempel_heute:
+                    if self.model_track_time.hat_bereits_5_tage_gearbeitet_in_woche(_date.today()):
+                        self.main_view.show_messagebox(
+                            title="Arbeitszeitschutz-Warnung",
+                            message=(
+                                f"ACHTUNG: Sie haben bereits an 5 Tagen in dieser Woche gearbeitet!\n\n"
+                                f"Nach dem Arbeitszeitschutzgesetz dürfen Minderjährige maximal 5 Tage pro Woche arbeiten.\n\n"
+                                f"Möchten Sie trotzdem fortfahren?"
+                            ),
+                            callback_yes=self._stempel_nach_6_tage_warnung,
+                            callback_no=None,
+                            yes_text="Trotzdem fortfahren",
+                            no_text="Abbrechen",
+                        )
+                        return
         except Exception as e:
             logger.error(f"Fehler bei der Prüfung auf 6. Arbeitstag: {e}", exc_info=True)
         
@@ -988,23 +1003,29 @@ class Controller():
             logger.error(f"Fehler bei der Prüfung auf Urlaubstag: {e}", exc_info=True)
         
         # Weiter mit 6-Tage-Prüfung bei Minderjährigen
+        # WICHTIG: Nur warnen, wenn heute noch KEIN Stempel existiert (erster Stempel des Tages)
         try:
             nutzer = self.model_track_time.get_aktueller_nutzer()
             if nutzer and nutzer.is_minor_on_date(_date.today()):
-                if self.model_track_time.hat_bereits_5_tage_gearbeitet_in_woche(_date.today()):
-                    self.main_view.show_messagebox(
-                        title="Arbeitszeitschutz-Warnung",
-                        message=(
-                            f"ACHTUNG: Sie haben bereits an 5 Tagen in dieser Woche gearbeitet!\n\n"
-                            f"Nach dem Arbeitszeitschutzgesetz dürfen Minderjährige maximal 5 Tage pro Woche arbeiten.\n\n"
-                            f"Möchten Sie trotzdem fortfahren?"
-                        ),
-                        callback_yes=self._stempel_nach_6_tage_warnung,
-                        callback_no=None,
-                        yes_text="Trotzdem fortfahren",
-                        no_text="Abbrechen",
-                    )
-                    return
+                # Prüfen ob heute bereits Stempel existieren
+                stempel_heute = self.model_track_time.get_stamps_for_today()
+                
+                # Nur warnen, wenn heute noch KEINE Stempel vorhanden sind
+                if not stempel_heute:
+                    if self.model_track_time.hat_bereits_5_tage_gearbeitet_in_woche(_date.today()):
+                        self.main_view.show_messagebox(
+                            title="Arbeitszeitschutz-Warnung",
+                            message=(
+                                f"ACHTUNG: Sie haben bereits an 5 Tagen in dieser Woche gearbeitet!\n\n"
+                                f"Nach dem Arbeitszeitschutzgesetz dürfen Minderjährige maximal 5 Tage pro Woche arbeiten.\n\n"
+                                f"Möchten Sie trotzdem fortfahren?"
+                            ),
+                            callback_yes=self._stempel_nach_6_tage_warnung,
+                            callback_no=None,
+                            yes_text="Trotzdem fortfahren",
+                            no_text="Abbrechen",
+                        )
+                        return
         except Exception as e:
             logger.error(f"Fehler bei der Prüfung auf 6. Arbeitstag: {e}", exc_info=True)
         
@@ -1190,25 +1211,31 @@ class Controller():
                     logger.error(f"Fehler bei der Urlaubstagsprüfung (Nachtragen): {e}", exc_info=True)
 
                 # Dann Minderjährige: Prüfung auf 6. Arbeitstag
+                # WICHTIG: Nur warnen, wenn am Nachtrag-Datum noch KEIN Stempel existiert
                 try:
                     from datetime import datetime as _dt
                     nachtrage_datum_obj = _dt.strptime(self.model_track_time.nachtragen_datum, "%d/%m/%Y").date()
                     nutzer = self.model_track_time.get_aktueller_nutzer()
                     if nutzer and nutzer.is_minor_on_date(nachtrage_datum_obj):
-                        if self.model_track_time.hat_bereits_5_tage_gearbeitet_in_woche(nachtrage_datum_obj):
-                            self.main_view.show_messagebox(
-                                title="Arbeitszeitschutz-Warnung",
-                                message=(
-                                    f"ACHTUNG: Es wurden bereits an 5 Tagen in der Woche vom {self.model_track_time.nachtragen_datum} gearbeitet!\n\n"
-                                    f"Nach dem Arbeitszeitschutzgesetz dürfen Minderjährige maximal 5 Tage pro Woche arbeiten.\n\n"
-                                    f"Möchten Sie trotzdem fortfahren?"
-                                ),
-                                callback_yes=self._nachtragen_nach_6_tage_warnung,
-                                callback_no=None,
-                                yes_text="Trotzdem fortfahren",
-                                no_text="Abbrechen",
-                            )
-                            return
+                        # Prüfen ob am Nachtrag-Datum bereits Stempel existieren
+                        stempel_am_datum = self.model_track_time.get_stamps_for_date(nachtrage_datum_obj)
+                        
+                        # Nur warnen, wenn am Nachtrag-Datum noch KEINE Stempel vorhanden sind
+                        if not stempel_am_datum:
+                            if self.model_track_time.hat_bereits_5_tage_gearbeitet_in_woche(nachtrage_datum_obj):
+                                self.main_view.show_messagebox(
+                                    title="Arbeitszeitschutz-Warnung",
+                                    message=(
+                                        f"ACHTUNG: Es wurden bereits an 5 Tagen in der Woche vom {self.model_track_time.nachtragen_datum} gearbeitet!\n\n"
+                                        f"Nach dem Arbeitszeitschutzgesetz dürfen Minderjährige maximal 5 Tage pro Woche arbeiten.\n\n"
+                                        f"Möchten Sie trotzdem fortfahren?"
+                                    ),
+                                    callback_yes=self._nachtragen_nach_6_tage_warnung,
+                                    callback_no=None,
+                                    yes_text="Trotzdem fortfahren",
+                                    no_text="Abbrechen",
+                                )
+                                return
                 except Exception as e:
                     logger.error(f"Fehler bei der 6-Tage-Prüfung (Nachtragen): {e}", exc_info=True)
 
@@ -1343,24 +1370,30 @@ class Controller():
             logger.error(f"Fehler bei der Urlaubstagsprüfung (Nachtragen nach Ruhezeiten): {e}", exc_info=True)
         
         # Weiter mit 6-Tage-Prüfung bei Minderjährigen
+        # WICHTIG: Nur warnen, wenn am Nachtrag-Datum noch KEIN Stempel existiert
         try:
             nachtrage_datum_obj = _dt.strptime(self.model_track_time.nachtragen_datum, "%d/%m/%Y").date()
             nutzer = self.model_track_time.get_aktueller_nutzer()
             if nutzer and nutzer.is_minor_on_date(nachtrage_datum_obj):
-                if self.model_track_time.hat_bereits_5_tage_gearbeitet_in_woche(nachtrage_datum_obj):
-                    self.main_view.show_messagebox(
-                        title="Arbeitszeitschutz-Warnung",
-                        message=(
-                            f"ACHTUNG: Es wurden bereits an 5 Tagen in der Woche vom {self.model_track_time.nachtragen_datum} gearbeitet!\n\n"
-                            f"Nach dem Arbeitszeitschutzgesetz dürfen Minderjährige maximal 5 Tage pro Woche arbeiten.\n\n"
-                            f"Möchten Sie trotzdem fortfahren?"
-                        ),
-                        callback_yes=self._nachtragen_nach_6_tage_warnung,
-                        callback_no=None,
-                        yes_text="Trotzdem fortfahren",
-                        no_text="Abbrechen",
-                    )
-                    return
+                # Prüfen ob am Nachtrag-Datum bereits Stempel existieren
+                stempel_am_datum = self.model_track_time.get_stamps_for_date(nachtrage_datum_obj)
+                
+                # Nur warnen, wenn am Nachtrag-Datum noch KEINE Stempel vorhanden sind
+                if not stempel_am_datum:
+                    if self.model_track_time.hat_bereits_5_tage_gearbeitet_in_woche(nachtrage_datum_obj):
+                        self.main_view.show_messagebox(
+                            title="Arbeitszeitschutz-Warnung",
+                            message=(
+                                f"ACHTUNG: Es wurden bereits an 5 Tagen in der Woche vom {self.model_track_time.nachtragen_datum} gearbeitet!\n\n"
+                                f"Nach dem Arbeitszeitschutzgesetz dürfen Minderjährige maximal 5 Tage pro Woche arbeiten.\n\n"
+                                f"Möchten Sie trotzdem fortfahren?"
+                            ),
+                            callback_yes=self._nachtragen_nach_6_tage_warnung,
+                            callback_no=None,
+                            yes_text="Trotzdem fortfahren",
+                            no_text="Abbrechen",
+                        )
+                        return
         except Exception as e:
             logger.error(f"Fehler bei der 6-Tage-Prüfung (Nachtragen nach Ruhezeiten): {e}", exc_info=True)
         
@@ -1439,24 +1472,30 @@ class Controller():
             logger.error(f"Fehler bei der Urlaubstagsprüfung (Nachtragen nach Arbeitsfenster): {e}", exc_info=True)
         
         # Weiter mit 6-Tage-Prüfung bei Minderjährigen
+        # WICHTIG: Nur warnen, wenn am Nachtrag-Datum noch KEIN Stempel existiert
         try:
             nachtrage_datum_obj = _dt.strptime(self.model_track_time.nachtragen_datum, "%d/%m/%Y").date()
             nutzer = self.model_track_time.get_aktueller_nutzer()
             if nutzer and nutzer.is_minor_on_date(nachtrage_datum_obj):
-                if self.model_track_time.hat_bereits_5_tage_gearbeitet_in_woche(nachtrage_datum_obj):
-                    self.main_view.show_messagebox(
-                        title="Arbeitszeitschutz-Warnung",
-                        message=(
-                            f"ACHTUNG: Es wurden bereits an 5 Tagen in der Woche vom {self.model_track_time.nachtragen_datum} gearbeitet!\n\n"
-                            f"Nach dem Arbeitszeitschutzgesetz dürfen Minderjährige maximal 5 Tage pro Woche arbeiten.\n\n"
-                            f"Möchten Sie trotzdem fortfahren?"
-                        ),
-                        callback_yes=self._nachtragen_nach_6_tage_warnung,
-                        callback_no=None,
-                        yes_text="Trotzdem fortfahren",
-                        no_text="Abbrechen",
-                    )
-                    return
+                # Prüfen ob am Nachtrag-Datum bereits Stempel existieren
+                stempel_am_datum = self.model_track_time.get_stamps_for_date(nachtrage_datum_obj)
+                
+                # Nur warnen, wenn am Nachtrag-Datum noch KEINE Stempel vorhanden sind
+                if not stempel_am_datum:
+                    if self.model_track_time.hat_bereits_5_tage_gearbeitet_in_woche(nachtrage_datum_obj):
+                        self.main_view.show_messagebox(
+                            title="Arbeitszeitschutz-Warnung",
+                            message=(
+                                f"ACHTUNG: Es wurden bereits an 5 Tagen in der Woche vom {self.model_track_time.nachtragen_datum} gearbeitet!\n\n"
+                                f"Nach dem Arbeitszeitschutzgesetz dürfen Minderjährige maximal 5 Tage pro Woche arbeiten.\n\n"
+                                f"Möchten Sie trotzdem fortfahren?"
+                            ),
+                            callback_yes=self._nachtragen_nach_6_tage_warnung,
+                            callback_no=None,
+                            yes_text="Trotzdem fortfahren",
+                            no_text="Abbrechen",
+                        )
+                        return
         except Exception as e:
             logger.error(f"Fehler bei der 6-Tage-Prüfung (Nachtragen nach Arbeitsfenster): {e}", exc_info=True)
         
