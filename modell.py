@@ -296,7 +296,8 @@ class Benachrichtigungen(Base):
         8: ["In der Woche vom", "wurde an mehr als 5 Tagen gearbeitet, was für Minderjährige nicht zulässig ist."],
         9: ["Achtung, am", "wurde außerhalb der gesetzlich zulässigen Arbeitszeiten (6:00 - 20:00 Uhr) für Minderjährige gestempelt."],
         10: "Ihr erlaubtes Arbeitsfenster endet bald.",  # Arbeitsfenster-Warnung (PopUp)
-        11: "Sie erreichen bald die maximale tägliche Arbeitszeit."  # Max. Arbeitszeit-Warnung (PopUp)
+        11: "Sie erreichen bald die maximale tägliche Arbeitszeit.",  # Max. Arbeitszeit-Warnung (PopUp)
+        12: ["Achtung, am", "wurden die gesetzlich vorgeschriebenen Pausenzeiten nicht eingehalten."]
     }
 
     __table_args__ = (
@@ -333,6 +334,8 @@ class Benachrichtigungen(Base):
                 return self.CODES[10]
             elif code_str == "11":
                 return self.CODES[11]
+            elif code_str == "12":
+                return f"{self.CODES[12][0]} {self.datum} {self.CODES[12][1]}"
             else:
                 # Unbekannten Code abfangen
                 logger.warning(f"Unbekannter Benachrichtigungscode: {self.benachrichtigungs_code}")
@@ -457,6 +460,10 @@ def hole_wochenstunden_am_datum(mitarbeiter_id, datum, fallback_wochenstunden):
     Sucht in der Wochenstunden-Historie nach dem passenden Eintrag für das
     angegebene Datum und gibt die zu diesem Zeitpunkt gültigen Wochenstunden zurück.
     
+    WICHTIG: Der zeitlich ERSTE Eintrag in der Historie gilt auch rückwirkend
+    für alle Zeiteinträge VOR seinem gueltig_ab-Datum. Dadurch werden alle
+    Einträge in der Vergangenheit mit den gleichen Wochenstunden behandelt.
+    
     Args:
         mitarbeiter_id (int): ID des Mitarbeiters
         datum: Datum als date, datetime oder String
@@ -466,8 +473,10 @@ def hole_wochenstunden_am_datum(mitarbeiter_id, datum, fallback_wochenstunden):
         int: Gültige Wochenstunden am angegebenen Datum oder Fallback-Wert
         
     Note:
-        Verwendet den letzten Eintrag vor oder am angegebenen Datum.
-        Bei Fehlern oder fehlenden Daten wird der Fallback-Wert zurückgegeben.
+        Logik:
+        1. Suche Eintrag mit gueltig_ab <= datum (wie bisher)
+        2. Falls KEIN Eintrag gefunden: Hole den zeitlich ERSTEN Eintrag (ältester gueltig_ab)
+        3. Wenn auch das fehlschlägt: Fallback-Wert verwenden
     """
     if not mitarbeiter_id:
         return fallback_wochenstunden
@@ -482,6 +491,7 @@ def hole_wochenstunden_am_datum(mitarbeiter_id, datum, fallback_wochenstunden):
         return fallback_wochenstunden
 
     try:
+        # 1. Versuch: Finde Eintrag mit gueltig_ab <= datum (normaler Fall)
         stmt = (
             select(VertragswochenstundenHistorie.wochenstunden)
             .where(
@@ -492,11 +502,31 @@ def hole_wochenstunden_am_datum(mitarbeiter_id, datum, fallback_wochenstunden):
             .limit(1)
         )
         result = session.execute(stmt).scalar_one_or_none()
+        
         if result is not None:
             return int(result)
+        
+        # 2. Versuch: Kein Eintrag vor/am Datum gefunden
+        # → Hole den zeitlich ERSTEN Eintrag (ältester gueltig_ab) für rückwirkende Gültigkeit
+        logger.debug(f"hole_wochenstunden_am_datum: Kein Eintrag für {datum} gefunden, suche ersten Historie-Eintrag")
+        
+        stmt_erster = (
+            select(VertragswochenstundenHistorie.wochenstunden)
+            .where(VertragswochenstundenHistorie.mitarbeiter_id == mitarbeiter_id)
+            .order_by(VertragswochenstundenHistorie.gueltig_ab.asc())  # Aufsteigend = ältester zuerst
+            .limit(1)
+        )
+        result_erster = session.execute(stmt_erster).scalar_one_or_none()
+        
+        if result_erster is not None:
+            logger.debug(f"hole_wochenstunden_am_datum: Verwende ersten Historie-Eintrag rückwirkend: {result_erster}h")
+            return int(result_erster)
+            
     except SQLAlchemyError as e:
         logger.error(f"hole_wochenstunden_am_datum: Fehler beim Lesen der Historie: {e}", exc_info=True)
 
+    # 3. Fallback: Keine Historie vorhanden
+    logger.debug(f"hole_wochenstunden_am_datum: Keine Historie gefunden, verwende Fallback: {fallback_wochenstunden}h")
     return fallback_wochenstunden
 
 
@@ -1014,12 +1044,20 @@ class ModellTrackTime():
                 else:
                     i += 1
 
+            # === Wochenstunden und tägliche Sollzeit für das angezeigte Datum ermitteln ===
+            # WICHTIG: Verwende die historischen Wochenstunden des ausgewählten Mitarbeiters,
+            # nicht die des eingeloggten Nutzers
             wochenstunden = hole_wochenstunden_am_datum(
-                nutzer.mitarbeiter_id,
+                ausgewählte_mitarbeiter_id,  # Verwende den im Kalender ausgewählten Mitarbeiter
                 date_obj,
-                nutzer.vertragliche_wochenstunden,
+                nutzer.vertragliche_wochenstunden,  # Fallback auf aktuelle Wochenstunden
             )
             tägliche_arbeitszeit = berechne_taegliche_sollzeit(wochenstunden)
+            
+            logger.debug(
+                f"get_zeiteinträge: Mitarbeiter {ausgewählte_mitarbeiter_id}, Datum {date_obj}, "
+                f"Wochenstunden (historisch): {wochenstunden}h, Tägliche Sollzeit: {tägliche_arbeitszeit}"
+            )
             
             # === Gleitzeit-Berechnung für Kalender-Anzeige ===
             
@@ -2103,7 +2141,7 @@ class ModellTrackTime():
             # (Berücksichtigt die unvalidierten Einträge und prüft auf Code-1-Benachrichtigungen)
             self.berechne_gleitzeit()
             
-            # Schritt 4: Arbeitszeitschutzgesetz-Prüfungen (Codes 3-9)
+            # Schritt 4: Arbeitszeitschutzgesetz-Prüfungen (Codes 3-9, 12)
             logger.debug("manueller_stempel_hinzufügen: Führe Arbeitszeitschutzgesetz-Prüfungen durch")
             self.checke_ruhezeiten()                          # Code 3: Ruhezeit-Verstöße
             self.checke_durchschnittliche_arbeitszeit()       # Code 4: Durchschnitt > 8h/Tag
@@ -2112,6 +2150,7 @@ class ModellTrackTime():
             self.checke_wochenstunden_minderjaehrige()        # Code 7: Wochenstunden > 40h (Minderjährige)
             self.checke_arbeitstage_pro_woche_minderjaehrige() # Code 8: >5 Arbeitstage/Woche (Minderjährige)
             self.checke_arbeitszeitfenster_minderjaehrige()   # Code 9: Arbeitszeitfenster 6-20 Uhr (Minderjährige)
+            self.checke_pausenzeiten()                        # Code 12: Pausenzeiten
             
             # Schritt 5: Prüfe und korrigiere bestehende Benachrichtigungen
             geloeschte = self.pruefe_und_korrigiere_arbeitszeitschutz_benachrichtigungen()
@@ -2454,7 +2493,7 @@ class ModellTrackTime():
             # Schritt 3: Gleitzeit neu berechnen (verwendet bestehende berechne_gleitzeit Methode)
             self.berechne_gleitzeit()
             
-            # Schritt 4: Arbeitszeitschutzgesetz-Prüfungen (Codes 3-9)
+            # Schritt 4: Arbeitszeitschutzgesetz-Prüfungen (Codes 3-9, 12)
             logger.debug(f"stempel_bearbeiten_nach_id: Führe Arbeitszeitschutzgesetz-Prüfungen durch für Datum {datum_str}")
             self.checke_ruhezeiten()                          # Code 3: Ruhezeit-Verstöße
             self.checke_durchschnittliche_arbeitszeit()       # Code 4: Durchschnitt > 8h/Tag
@@ -2463,6 +2502,7 @@ class ModellTrackTime():
             self.checke_wochenstunden_minderjaehrige()        # Code 7: Wochenstunden > 40h (Minderjährige)
             self.checke_arbeitstage_pro_woche_minderjaehrige() # Code 8: >5 Arbeitstage/Woche (Minderjährige)
             self.checke_arbeitszeitfenster_minderjaehrige()   # Code 9: Arbeitszeitfenster 6-20 Uhr (Minderjährige)
+            self.checke_pausenzeiten()                        # Code 12: Pausenzeiten
             
             # Schritt 5: Prüfe und korrigiere bestehende Benachrichtigungen
             geloeschte = self.pruefe_und_korrigiere_arbeitszeitschutz_benachrichtigungen()
@@ -2535,7 +2575,7 @@ class ModellTrackTime():
             # Dies wird alle unvalidierten Einträge verarbeiten und prüft auf Benachrichtigungen (Code 1)
             self.berechne_gleitzeit()
             
-            # Schritt 5: Arbeitszeitschutzgesetz-Prüfungen (Codes 3-9)
+            # Schritt 5: Arbeitszeitschutzgesetz-Prüfungen (Codes 3-9, 12)
             logger.debug(f"stempel_löschen_nach_id: Führe Arbeitszeitschutzgesetz-Prüfungen durch für Datum {datum_str}")
             self.checke_ruhezeiten()                          # Code 3: Ruhezeit-Verstöße
             self.checke_durchschnittliche_arbeitszeit()       # Code 4: Durchschnitt > 8h/Tag
@@ -2544,6 +2584,7 @@ class ModellTrackTime():
             self.checke_wochenstunden_minderjaehrige()        # Code 7: Wochenstunden > 40h (Minderjährige)
             self.checke_arbeitstage_pro_woche_minderjaehrige() # Code 8: >5 Arbeitstage/Woche (Minderjährige)
             self.checke_arbeitszeitfenster_minderjaehrige()   # Code 9: Arbeitszeitfenster 6-20 Uhr (Minderjährige)
+            self.checke_pausenzeiten()                        # Code 12: Pausenzeiten
             
             # Schritt 6: Prüfe und korrigiere bestehende Benachrichtigungen
             geloeschte = self.pruefe_und_korrigiere_arbeitszeitschutz_benachrichtigungen()
@@ -3065,6 +3106,146 @@ class ModellTrackTime():
             logger.error(f"DB-Fehler in checke_sonn_feiertage: {e}", exc_info=True)
             session.rollback()
 
+
+    def checke_pausenzeiten(self):
+        """
+        Prüft, ob an Arbeitstagen ausreichende Pausen eingehalten wurden.
+        
+        Prüft alle Tage vom letzter_login bis gestern und erstellt Benachrichtigungen (Code 12)
+        für Tage, an denen die gesetzlich vorgeschriebenen Pausen nicht eingehalten wurden.
+        
+        Pausenregelungen:
+            Minderjährige (JArbSchG § 11):
+                - >= 6h Arbeitszeit: 60 Minuten Pause erforderlich
+                - >= 4.5h Arbeitszeit: 30 Minuten Pause erforderlich
+            Volljährige (ArbZG § 4):
+                - >= 9h Arbeitszeit: 45 Minuten Pause erforderlich
+                - >= 6h Arbeitszeit: 30 Minuten Pause erforderlich
+        
+        Returns:
+            Liste der Tage mit unzureichenden Pausen
+            
+        Note:
+            Unterscheidet zwischen:
+            - Automatischen Pausenabzügen (bei Arbeitsblöcken >= 6h)
+            - Manuellen Pausen (durch Ein-/Ausstempeln)
+            
+            Beispiel für unzureichende Pause ohne automatischen Abzug:
+            - 4h Arbeit, 10min Pause, 4h Arbeit = 8h Arbeitszeit insgesamt
+            - Jeder Block < 6h → Kein automatischer Pausenabzug
+            - Manuelle Pause nur 10min statt erforderlicher 30min
+        """
+        if self.aktueller_nutzer_id is None: 
+            logger.debug("checke_pausenzeiten: aktueller_nutzer_id ist None")
+            return
+        if not session: 
+            logger.debug("checke_pausenzeiten: session ist nicht verfügbar")
+            return
+
+        logger.info(f"checke_pausenzeiten: Starte für Nutzer {self.aktueller_nutzer_id}")
+
+        try:
+            nutzer = session.get(mitarbeiter, self.aktueller_nutzer_id)
+            if not nutzer or not nutzer.letzter_login: 
+                logger.error(f"checke_pausenzeiten: Nutzer {self.aktueller_nutzer_id} nicht gefunden oder kein letzter_login")
+                return
+
+            letzter_login = nutzer.letzter_login
+            gestern = date.today() - timedelta(days=1)
+            
+            logger.debug(f"checke_pausenzeiten: Prüfe Zeitraum {letzter_login} bis {gestern}")
+
+            tage_mit_unzureichenden_pausen = []
+            tag = letzter_login
+            
+            while tag <= gestern:
+                # Hole alle Stempel für diesen Tag
+                stmt = select(Zeiteintrag).where(
+                    (Zeiteintrag.mitarbeiter_id == self.aktueller_nutzer_id) &
+                    (Zeiteintrag.datum == tag)
+                ).order_by(Zeiteintrag.zeit)
+                
+                stempel = list(session.execute(stmt).scalars().all())
+                
+                # Nur Tage mit gerader Stempelanzahl prüfen (vollständige Paare)
+                if len(stempel) >= 2 and len(stempel) % 2 == 0:
+                    # Prüfe ob Nutzer an diesem Tag minderjährig war
+                    ist_minderjaehrig = nutzer.is_minor_on_date(tag)
+                    
+                    # Berechne Arbeitszeit und Pausen
+                    gesamt_arbeitszeit = timedelta()
+                    gesamt_pausen = timedelta()
+                    hatte_automatische_pause = False
+                    
+                    # Arbeitsblöcke durchgehen (Paare von ein/aus)
+                    for i in range(0, len(stempel), 2):
+                        start = stempel[i]
+                        ende = stempel[i + 1]
+                        
+                        # Arbeitszeit für diesen Block
+                        start_dt = datetime.combine(tag, start.zeit)
+                        ende_dt = datetime.combine(tag, ende.zeit)
+                        arbeitszeit_block = ende_dt - start_dt
+                        
+                        # Prüfe ob dieser Block automatische Pause auslösen würde
+                        # Minderjährige: >= 4.5h, Erwachsene: >= 6h
+                        if ist_minderjaehrig:
+                            if arbeitszeit_block >= timedelta(hours=4.5):
+                                hatte_automatische_pause = True
+                        else:
+                            if arbeitszeit_block >= timedelta(hours=6):
+                                hatte_automatische_pause = True
+                        
+                        gesamt_arbeitszeit += arbeitszeit_block
+                        
+                        # Pause zum nächsten Block berechnen (falls vorhanden)
+                        if i + 2 < len(stempel):
+                            naechster_start = stempel[i + 2]
+                            pause_start = ende_dt
+                            pause_ende = datetime.combine(tag, naechster_start.zeit)
+                            pause_dauer = pause_ende - pause_start
+                            gesamt_pausen += pause_dauer
+                    
+                    # Bestimme erforderliche Pausenzeit basierend auf Gesamtarbeitszeit
+                    erforderliche_pause = timedelta()
+                    
+                    if ist_minderjaehrig:
+                        if gesamt_arbeitszeit >= timedelta(hours=6):
+                            erforderliche_pause = timedelta(minutes=60)
+                        elif gesamt_arbeitszeit >= timedelta(hours=4.5):
+                            erforderliche_pause = timedelta(minutes=30)
+                    else:
+                        if gesamt_arbeitszeit >= timedelta(hours=9):
+                            erforderliche_pause = timedelta(minutes=45)
+                        elif gesamt_arbeitszeit >= timedelta(hours=6):
+                            erforderliche_pause = timedelta(minutes=30)
+                    
+                    # Wenn automatische Pause abgezogen wurde, ist die Pausenregelung erfüllt
+                    # Ansonsten prüfe ob manuelle Pausen ausreichend sind
+                    if erforderliche_pause > timedelta() and not hatte_automatische_pause:
+                        if gesamt_pausen < erforderliche_pause:
+                            tage_mit_unzureichenden_pausen.append(tag)
+                            logger.debug(
+                                f"checke_pausenzeiten: Unzureichende Pause am {tag}: "
+                                f"Arbeitszeit={gesamt_arbeitszeit}, Pause={gesamt_pausen}, "
+                                f"Erforderlich={erforderliche_pause}, Minderjährig={ist_minderjaehrig}"
+                            )
+                
+                tag += timedelta(days=1)
+            
+            logger.info(f"checke_pausenzeiten: {len(tage_mit_unzureichenden_pausen)} Tage mit unzureichenden Pausen gefunden")
+
+            for tag in tage_mit_unzureichenden_pausen:
+                logger.debug(f"checke_pausenzeiten: Erstelle Benachrichtigung für {tag}")
+                self._add_benachrichtigung_safe(code=12, datum=tag)
+
+            logger.info(f"checke_pausenzeiten: Abgeschlossen. Benachrichtigungen für {len(tage_mit_unzureichenden_pausen)} Tage erstellt")
+            return tage_mit_unzureichenden_pausen
+        
+        except SQLAlchemyError as e:
+            logger.error(f"DB-Fehler in checke_pausenzeiten: {e}", exc_info=True)
+            session.rollback()
+
     
     def pruefe_arbeitszeit_fenster(self, stempel_datum, stempel_zeit):
         """
@@ -3277,16 +3458,16 @@ class ModellTrackTime():
                 logger.error(f"pruefe_und_korrigiere_arbeitszeitschutz_benachrichtigungen: Nutzer {self.aktueller_nutzer_id} nicht gefunden")
                 return 0
             
-            # Alle Benachrichtigungen der Codes 3-9 holen
+            # Alle Benachrichtigungen der Codes 3-9 und 12 holen
             stmt = select(Benachrichtigungen).where(
                 (Benachrichtigungen.mitarbeiter_id == self.aktueller_nutzer_id) &
-                (Benachrichtigungen.benachrichtigungs_code.in_([3, 4, 5, 6, 7, 8, 9]))
+                (Benachrichtigungen.benachrichtigungs_code.in_([3, 4, 5, 6, 7, 8, 9, 12]))
             ).order_by(Benachrichtigungen.datum, Benachrichtigungen.benachrichtigungs_code)
             
             benachrichtigungen = session.execute(stmt).scalars().all()
             
             if not benachrichtigungen:
-                logger.debug("pruefe_und_korrigiere_arbeitszeitschutz_benachrichtigungen: Keine Benachrichtigungen der Codes 3-9 gefunden")
+                logger.debug("pruefe_und_korrigiere_arbeitszeitschutz_benachrichtigungen: Keine Benachrichtigungen der Codes 3-9, 12 gefunden")
                 return 0
             
             logger.debug(f"pruefe_und_korrigiere_arbeitszeitschutz_benachrichtigungen: {len(benachrichtigungen)} Benachrichtigungen gefunden")
@@ -3325,6 +3506,10 @@ class ModellTrackTime():
                 # Code 9: Arbeitszeitfenster Minderjährige prüfen
                 elif code == 9:
                     zu_loeschen = self._pruefe_arbeitszeitfenster_korrigiert(nutzer, datum)
+                
+                # Code 12: Pausenzeiten prüfen
+                elif code == 12:
+                    zu_loeschen = self._pruefe_pausenzeiten_korrigiert(nutzer, datum)
                 
                 # Benachrichtigung löschen, wenn korrigiert
                 if zu_loeschen:
@@ -3589,6 +3774,88 @@ class ModellTrackTime():
             
         except Exception as e:
             logger.error(f"Fehler in _pruefe_arbeitszeitfenster_korrigiert: {e}", exc_info=True)
+            return False
+    
+    
+    def _pruefe_pausenzeiten_korrigiert(self, nutzer, datum):
+        """Prüft, ob Pausenzeit-Verstoß am gegebenen Datum korrigiert wurde."""
+        try:
+            # Hole alle Stempel für diesen Tag
+            stmt = select(Zeiteintrag).where(
+                (Zeiteintrag.mitarbeiter_id == nutzer.mitarbeiter_id) &
+                (Zeiteintrag.datum == datum)
+            ).order_by(Zeiteintrag.zeit)
+            
+            stempel = list(session.execute(stmt).scalars().all())
+            
+            # Wenn keine Stempel oder ungerade Anzahl, ist "korrigiert" (Tag ist nicht mehr vollständig)
+            if len(stempel) < 2 or len(stempel) % 2 != 0:
+                return True
+            
+            # Prüfe ob Nutzer an diesem Tag minderjährig war
+            ist_minderjaehrig = nutzer.is_minor_on_date(datum)
+            
+            # Berechne Arbeitszeit und Pausen (gleiche Logik wie in checke_pausenzeiten)
+            gesamt_arbeitszeit = timedelta()
+            gesamt_pausen = timedelta()
+            hatte_automatische_pause = False
+            
+            # Arbeitsblöcke durchgehen (Paare von ein/aus)
+            for i in range(0, len(stempel), 2):
+                start = stempel[i]
+                ende = stempel[i + 1]
+                
+                # Arbeitszeit für diesen Block
+                start_dt = datetime.combine(datum, start.zeit)
+                ende_dt = datetime.combine(datum, ende.zeit)
+                arbeitszeit_block = ende_dt - start_dt
+                
+                # Prüfe ob dieser Block automatische Pause auslösen würde
+                # Minderjährige: >= 4.5h, Erwachsene: >= 6h
+                if ist_minderjaehrig:
+                    if arbeitszeit_block >= timedelta(hours=4.5):
+                        hatte_automatische_pause = True
+                else:
+                    if arbeitszeit_block >= timedelta(hours=6):
+                        hatte_automatische_pause = True
+                
+                gesamt_arbeitszeit += arbeitszeit_block
+                
+                # Pause zum nächsten Block berechnen (falls vorhanden)
+                if i + 2 < len(stempel):
+                    naechster_start = stempel[i + 2]
+                    pause_start = ende_dt
+                    pause_ende = datetime.combine(datum, naechster_start.zeit)
+                    pause_dauer = pause_ende - pause_start
+                    gesamt_pausen += pause_dauer
+            
+            # Bestimme erforderliche Pausenzeit basierend auf Gesamtarbeitszeit
+            erforderliche_pause = timedelta()
+            
+            if ist_minderjaehrig:
+                if gesamt_arbeitszeit >= timedelta(hours=6):
+                    erforderliche_pause = timedelta(minutes=60)
+                elif gesamt_arbeitszeit >= timedelta(hours=4.5):
+                    erforderliche_pause = timedelta(minutes=30)
+            else:
+                if gesamt_arbeitszeit >= timedelta(hours=9):
+                    erforderliche_pause = timedelta(minutes=45)
+                elif gesamt_arbeitszeit >= timedelta(hours=6):
+                    erforderliche_pause = timedelta(minutes=30)
+            
+            # Wenn keine Pause erforderlich, ist korrigiert
+            if erforderliche_pause == timedelta():
+                return True
+            
+            # Wenn automatische Pause abgezogen wurde, ist die Pausenregelung erfüllt
+            if hatte_automatische_pause:
+                return True
+            
+            # Ansonsten prüfe ob manuelle Pausen jetzt ausreichend sind
+            return gesamt_pausen >= erforderliche_pause
+            
+        except Exception as e:
+            logger.error(f"Fehler in _pruefe_pausenzeiten_korrigiert: {e}", exc_info=True)
             return False
     
     
