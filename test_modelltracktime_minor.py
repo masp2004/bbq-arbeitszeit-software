@@ -1,3 +1,30 @@
+"""
+Test-Suite für ModellTrackTime (Minderjährige Mitarbeiter).
+
+Dieses Modul testet die Geschäftslogik für Zeiterfassung und
+Arbeitszeitschutz-Regelungen für minderjährige Mitarbeiter.
+
+Haupttest-Bereiche:
+- Historische Wochenstunden für Minderjährige
+- Gleitzeit-Berechnung mit verschärften Pausenregelungen
+- Arbeitszeitschutzgesetz-Validierung (Minderjährige):
+  * 12h Ruhezeit zwischen Arbeitstagen
+  * Max. 8h Arbeitszeit pro Tag
+  * Max. 40h Arbeitszeit pro Woche
+  * Max. 5 Arbeitstage pro Woche
+  * Arbeitsfenster 6:00-20:00 Uhr
+- Benachrichtigungssystem (Codes 7 und 8 für Minderjährige)
+- Urlaubs- und Feiertagshandling
+
+Test-Infrastruktur:
+- Isolierte In-Memory-Datenbank pro Test
+- Fixtures für minderjährigen Testbenutzer (17 Jahre)
+- Modul-Reload für saubere SQLAlchemy-Mapper
+
+Autor: Velqor
+Version: 2.0
+"""
+
 import pytest
 import importlib
 from datetime import datetime, date, timedelta, time
@@ -14,8 +41,20 @@ import modell  # wichtig: Basisimport für reload
 @pytest.fixture(scope="function", autouse=True)
 def isolated_db(monkeypatch):
     """
-    Erstellt für jeden Test eine isolierte In-Memory-Datenbank
-    und lädt modell.py neu, um saubere SQLAlchemy-Mapper zu erzwingen.
+    Erstellt für jeden Test eine isolierte In-Memory-Datenbank.
+    
+    Lädt modell.py neu, um saubere SQLAlchemy-Mapper zu erzwingen
+    und Cross-Test-Kontamination zu verhindern.
+    
+    Args:
+        monkeypatch: Pytest fixture für Monkey-Patching
+        
+    Yields:
+        Session: SQLAlchemy-Session für den Test
+        
+    Note:
+        Wird automatisch vor jedem Test ausgeführt (autouse=True).
+        Führt Rollback und Close nach jedem Test aus.
     """
     importlib.reload(modell)
 
@@ -34,7 +73,21 @@ def isolated_db(monkeypatch):
 
 @pytest.fixture
 def test_user(isolated_db):
-    """Erzeugt einen minderjährigen Testnutzer (17 Jahre alt)."""
+    """
+    Erzeugt einen minderjährigen Testnutzer (17 Jahre alt).
+    
+    Args:
+        isolated_db: Test-Datenbank-Session
+        
+    Returns:
+        mitarbeiter: Minderjähriger Testbenutzer
+        
+    Note:
+        - Geburtsdatum: Heute vor 17 Jahren minus 10 Tage
+        - Wochenstunden: 40h (maximal für Minderjährige)
+        - Gleitzeit: 0h
+        - Ampel: ±5h grün, ±5h rot
+    """
     today = date.today()
     # Geburtsdatum so setzen, dass der Nutzer heute 17 ist
     birth_date = today.replace(year=today.year - 17) - timedelta(days=10)
@@ -58,7 +111,18 @@ def test_user(isolated_db):
 
 @pytest.fixture
 def model(test_user):
-    """Initialisiert ein ModellTrackTime-Objekt mit aktivem Nutzer."""
+    """
+    Initialisiert ein ModellTrackTime-Objekt mit aktivem minderjährigen Nutzer.
+    
+    Args:
+        test_user: Minderjähriger Testbenutzer-Fixture
+        
+    Returns:
+        ModellTrackTime: Konfigurierte Model-Instanz
+        
+    Note:
+        Setzt alle relevanten Benutzer-Attribute im Model.
+    """
     m = modell.ModellTrackTime()
     m.aktueller_nutzer_id = test_user.mitarbeiter_id
     m.aktueller_nutzer_vertragliche_wochenstunden = test_user.vertragliche_wochenstunden
@@ -73,7 +137,19 @@ def model(test_user):
 # ============================================================
 
 def add_stempel(session, mid, tag, start="08:00", ende="16:00"):
-    """Hilfsfunktion: fügt zwei Stempel (Start/Ende) hinzu."""
+    """
+    Hilfsfunktion zum Hinzufügen eines Ein-/Ausstempel-Paares.
+    
+    Args:
+        session: SQLAlchemy-Session
+        mid (int): Mitarbeiter-ID
+        tag (date): Datum der Stempel
+        start (str): Einstempel-Uhrzeit im Format "HH:MM"
+        ende (str): Ausstempel-Uhrzeit im Format "HH:MM"
+        
+    Note:
+        Committet die Stempel automatisch in die Datenbank.
+    """
     s1 = modell.Zeiteintrag(mitarbeiter_id=mid, datum=tag, zeit=datetime.strptime(start, "%H:%M").time())
     s2 = modell.Zeiteintrag(mitarbeiter_id=mid, datum=tag, zeit=datetime.strptime(ende, "%H:%M").time())
     session.add_all([s1, s2])
@@ -86,8 +162,16 @@ def add_stempel(session, mid, tag, start="08:00", ende="16:00"):
 
 def test_urlaub_verhindert_gleitzeitabzug_minor(model, isolated_db, test_user):
     """
+    Testet, dass Urlaubstage keinen Gleitzeit-Abzug verursachen.
+    
     Legt für alle Tage vom letzten_login bis gestern Urlaubseinträge an.
-    checke_arbeitstage() darf dann keine Gleitzeit abziehen und keine Code-1-Benachrichtigungen erzeugen.
+    checke_arbeitstage() darf dann keine Gleitzeit abziehen und keine
+    Code-1-Benachrichtigungen erzeugen.
+    
+    Validiert:
+        - Urlaubstage zählen nicht als fehlende Arbeitstage
+        - Keine Code-1-Benachrichtigungen bei Urlaub
+        - Gleitzeit bleibt unverändert bei Urlaub
     """
     letzter_login = test_user.letzter_login
     gestern = date.today() - timedelta(days=1)
