@@ -33,20 +33,29 @@ def set_fixed_window_size(size):
     Example:
         >>> set_fixed_window_size((800, 600))
         # Fenster wird auf 800x600 fixiert
+        
+    Note:
+        - Wird von LoginView, RegisterView und MainView aufgerufen
+        - Jeder Screen hat seine eigene feste Größe
+        - Event-Handler wird bei jedem Aufruf neu gebunden (überschreibt vorherigen)
     """
     global _fixed_size, _enforce_handler
+    # Größe als Integer-Tupel speichern
     _fixed_size = (int(size[0]), int(size[1]))
 
-    # Größe setzen und Resize deaktivieren
+    # Schritt 1: Fenstergröße setzen
     Window.size = _fixed_size
+    # Schritt 2: Resize-Funktionalität deaktivieren
     Window.resizable = False
 
-    # Minimum setzen (verhindert Verkleinern)
+    # Schritt 3: Minimum-Größe setzen (verhindert Verkleinern unter diese Größe)
     try:
         Window.minimum_width, Window.minimum_height = _fixed_size
     except Exception:
+        # Bei manchen Plattformen nicht unterstützt, ignorieren
         pass
-    # Vorherigen Enforce-Handler entfernen (falls vorhanden)
+    
+    # Schritt 4: Vorherigen Enforce-Handler entfernen (falls vorhanden)
     if _enforce_handler is not None:
         try:
             Window.unbind(on_resize=_enforce_handler)
@@ -63,14 +72,21 @@ def set_fixed_window_size(size):
         
         Args:
             window: Kivy Window-Objekt
-            width (int): Neue Breite
-            height (int): Neue Höhe
-        
-        Hinweis: Die Argumente sind durch die Event-Signatur von Kivy erforderlich,
-        werden aber nicht verwendet, da die Fenstergröße fest erzwungen wird.
+            width (int): Neue Breite (vom Resize-Event)
+            height (int): Neue Höhe (vom Resize-Event)
+            
+        Note:
+            Die Argumente sind durch die Event-Signatur von Kivy erforderlich,
+            werden aber nicht verwendet, da die Fenstergröße fest erzwungen wird.
+            
+            Clock.schedule_once() wird verwendet, um Endlosschleifen zu vermeiden
+            (Resize-Event → Handler setzt Größe → Resize-Event → ...).
         """
+        # Prüfen ob tatsächlich eine Abweichung von der fixierten Größe vorliegt
         if (int(width), int(height)) != _fixed_size:
+            # Asynchron (im nächsten Frame) die korrekte Größe wiederherstellen
             Clock.schedule_once(lambda dt: setattr(Window, "size", _fixed_size), 0)
-        
+    
+    # Handler speichern und binden
     _enforce_handler = _enforce
     Window.bind(on_resize=_enforce_handler)

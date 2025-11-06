@@ -1,3 +1,29 @@
+"""
+Test-Suite für ModellTrackTime (Volljährige Mitarbeiter).
+
+Dieses Modul testet die Geschäftslogik für Zeiterfassung und
+Arbeitszeitschutz-Regelungen für volljährige Mitarbeiter.
+
+Haupttest-Bereiche:
+- Historische Wochenstunden und deren Auswirkungen
+- Gleitzeit-Berechnung mit Pausenregelungen
+- Arbeitszeitschutzgesetz-Validierung (Erwachsene):
+  * 11h Ruhezeit zwischen Arbeitstagen
+  * Max. 10h Arbeitszeit pro Tag
+  * Durchschnittlich 8h über 6 Monate
+  * Arbeitsfenster 6:00-22:00 Uhr
+- Benachrichtigungssystem
+- Urlaubs- und Feiertagshandling
+
+Test-Infrastruktur:
+- Isolierte In-Memory-Datenbank pro Test
+- Fixtures für Testbenutzer und Model-Instanz
+- Modul-Reload für saubere SQLAlchemy-Mapper
+
+Autor: Velqor
+Version: 2.0
+"""
+
 import pytest
 import importlib
 from datetime import datetime, date, timedelta, time
@@ -14,8 +40,20 @@ import modell  # wichtig: Basisimport für reload
 @pytest.fixture(scope="function", autouse=True)
 def isolated_db(monkeypatch):
     """
-    Erstellt für jeden Test eine isolierte In-Memory-Datenbank
-    und lädt modell.py neu, um saubere SQLAlchemy-Mapper zu erzwingen.
+    Erstellt für jeden Test eine isolierte In-Memory-Datenbank.
+    
+    Lädt modell.py neu, um saubere SQLAlchemy-Mapper zu erzwingen
+    und Cross-Test-Kontamination zu verhindern.
+    
+    Args:
+        monkeypatch: Pytest fixture für Monkey-Patching
+        
+    Yields:
+        Session: SQLAlchemy-Session für den Test
+        
+    Note:
+        Wird automatisch vor jedem Test ausgeführt (autouse=True).
+        Führt Rollback und Close nach jedem Test aus.
     """
     importlib.reload(modell)
 
@@ -35,14 +73,28 @@ def isolated_db(monkeypatch):
 
 @pytest.fixture
 def test_user(isolated_db):
-    """Erzeugt einen Testnutzer mit gültigen Attributen."""
+    """
+    Erzeugt einen volljährigen Testnutzer mit gültigen Attributen.
+    
+    Args:
+        isolated_db: Test-Datenbank-Session
+        
+    Returns:
+        mitarbeiter: Testbenutzer-Objekt mit Standard-Einstellungen
+        
+    Note:
+        - Geburtsdatum: 1990-01-01 (volljährig)
+        - Wochenstunden: 40h
+        - Gleitzeit: 0h
+        - Ampel: ±5h grün, ±5h rot
+    """
     user = modell.mitarbeiter(
         name="Testuser",
         password="1234",
         vertragliche_wochenstunden=40,
         geburtsdatum=date(1990, 1, 1),
         gleitzeit=0,
-        letzter_login=date.today() - timedelta(days=5),
+        letzter_login=date.today() - timedelta(days=14),
         ampel_grün=5,
         ampel_rot=-5,
     )
@@ -54,7 +106,18 @@ def test_user(isolated_db):
 
 @pytest.fixture
 def model(test_user):
-    """Initialisiert ein ModellTrackTime-Objekt mit aktivem Nutzer."""
+    """
+    Initialisiert ein ModellTrackTime-Objekt mit aktivem Nutzer.
+    
+    Args:
+        test_user: Testbenutzer-Fixture
+        
+    Returns:
+        ModellTrackTime: Konfigurierte Model-Instanz
+        
+    Note:
+        Setzt alle relevanten Benutzer-Attribute im Model.
+    """
     m = modell.ModellTrackTime()
     m.aktueller_nutzer_id = test_user.mitarbeiter_id
     m.aktueller_nutzer_vertragliche_wochenstunden = test_user.vertragliche_wochenstunden
@@ -69,7 +132,19 @@ def model(test_user):
 # ============================================================
 
 def add_stempel(session, mid, tag, start="08:00", ende="16:00"):
-    """Hilfsfunktion: fügt zwei Stempel (Start/Ende) hinzu."""
+    """
+    Hilfsfunktion zum Hinzufügen eines Ein-/Ausstempel-Paares.
+    
+    Args:
+        session: SQLAlchemy-Session
+        mid (int): Mitarbeiter-ID
+        tag (date): Datum der Stempel
+        start (str): Einstempel-Uhrzeit im Format "HH:MM"
+        ende (str): Ausstempel-Uhrzeit im Format "HH:MM"
+        
+    Note:
+        Committet die Stempel automatisch in die Datenbank.
+    """
     s1 = modell.Zeiteintrag(mitarbeiter_id=mid, datum=tag, zeit=datetime.strptime(start, "%H:%M").time())
     s2 = modell.Zeiteintrag(mitarbeiter_id=mid, datum=tag, zeit=datetime.strptime(ende, "%H:%M").time())
     session.add_all([s1, s2])
@@ -80,7 +155,22 @@ def add_stempel(session, mid, tag, start="08:00", ende="16:00"):
 # ============================================================
 
 def test_wochenstunden_historie_verwendung(model, isolated_db, test_user):
-    """Neuere Arbeitszeit darf ältere Tage nicht beeinflussen und wirkt nur ab Gültigkeitsdatum."""
+    """
+    Testet die Verwendung der Wochenstunden-Historie.
+    
+    Neuere Arbeitszeit darf ältere Tage nicht beeinflussen und wirkt nur
+    ab Gültigkeitsdatum.
+    
+    Szenario:
+        - Tag -30: Historie mit 40h/Woche angelegt
+        - Tag -1: Wechsel zu 30h/Woche
+        - Tag -2 (vor Wechsel): Stempel mit 8h → muss mit 40h-Sollzeit berechnet werden
+        - Tag 0 (nach Wechsel): Stempel mit 6h → muss mit 30h-Sollzeit berechnet werden
+        
+    Validiert:
+        - Historische Wochenstunden werden korrekt angewendet
+        - Gleitzeit-Berechnung berücksichtigt zeitpunkt-abhängige Sollzeiten
+    """
     # Ausgangslage: 40h/Woche (8h täglich) bereits historisiert
     start_hist = date.today() - timedelta(days=30)
     isolated_db.add(
@@ -517,5 +607,4 @@ def test_arbeitsfenster_edge_case(model, isolated_db, test_user):
     erwartete_gleitzeit = gleitzeit_vorher + erwartete_aenderung
     assert test_user.gleitzeit == pytest.approx(erwartete_gleitzeit), \
         "Die Gleitzeit wurde falsch berechnet. Zeit außerhalb des Arbeitsfensters wurde mitgezählt."
-
 

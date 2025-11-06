@@ -16,6 +16,8 @@ import datetime
 import calendar
 import time
 import holidays
+import sys
+import os
 
 from datetime import datetime as dt, time as dt_time
 from kivy.uix.screenmanager import Screen
@@ -43,6 +45,33 @@ from kivy.metrics import dp
 from kivy.metrics import sp
 
 from window_size import set_fixed_window_size
+
+
+def resource_path(relative_path):
+    """
+    Ermittelt den absoluten Pfad zu einer Ressource (Bild, Datei, etc.).
+    
+    Funktioniert sowohl im Entwicklungsmodus als auch in der .exe-Datei.
+    PyInstaller erstellt einen temporären Ordner und speichert den Pfad in _MEIPASS.
+    
+    Args:
+        relative_path (str): Relativer Pfad zur Ressource (z.B. "velqor.png")
+        
+    Returns:
+        str: Absoluter Pfad zur Ressource
+        
+    Note:
+        Bei .exe-Dateien werden Ressourcen in sys._MEIPASS extrahiert.
+        Im Entwicklungsmodus wird der aktuelle Verzeichnispfad verwendet.
+    """
+    try:
+        # PyInstaller erstellt einen temp-Ordner und speichert den Pfad in _MEIPASS
+        base_path = sys._MEIPASS
+    except AttributeError:
+        # Im Entwicklungsmodus: Verwende das aktuelle Verzeichnis
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
 
 
 class LoginView(Screen):
@@ -82,7 +111,7 @@ class LoginView(Screen):
         top_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(64))
         title = Label(text="Anmeldung", font_size=sp(20), valign="middle", halign="left")
         title.bind(size=title.setter("text_size"))
-        logo = Image(source="velqor.png", size_hint=(None, None), size=(dp(77), dp(77)))
+        logo = Image(source=resource_path("velqor.png"), size_hint=(None, None), size=(dp(77), dp(77)))
         top_row.add_widget(title)
         top_row.add_widget(logo)
 
@@ -497,7 +526,7 @@ class MainView(Screen):
         widgets_layout.bind(minimum_height=widgets_layout.setter('height'))
         widgets_layout.pos_hint = {"right": 1, "top": 1}
 
-        logo = Image(source="bbq.png", size_hint=(None, None), size=(dp(64), dp(64)))
+        logo = Image(source=resource_path("bbq.png"), size_hint=(None, None), size=(dp(64), dp(64)))
         logo.pos_hint = {"right": 1}
         widgets_layout.add_widget(logo)
 
@@ -885,6 +914,24 @@ class MainView(Screen):
 
         self.settings_layout_left.add_widget(left_card)
 
+        # Ausloggen-Button
+        logout_button_container = BoxLayout(
+            orientation='vertical',
+            size_hint=(1, None),
+            height=dp(60),
+            padding=(0, dp(20), 0, 0)
+        )
+        
+        self.logout_button = Button(
+            text="Ausloggen",
+            size_hint=(1, None),
+            height=dp(40),
+            background_color=(0.8, 0.2, 0.2, 1)  # Rote Farbe für Ausloggen
+        )
+        logout_button_container.add_widget(self.logout_button)
+        
+        self.settings_layout_left.add_widget(logout_button_container)
+
         self.settings_horizontal_layout.add_widget(self.settings_layout_left)
         self.settings_horizontal_layout.add_widget(self.settings_layout)
 
@@ -972,7 +1019,23 @@ class MainView(Screen):
         popup.open()
 
     def open_settings_edit_popup(self, field_label, current_value="", label_attr=None):
-        """Zeigt ein Bearbeitungs-Popup für Einstellungen an."""
+        """
+        Zeigt ein Bearbeitungs-Popup für Einstellungen an.
+        
+        Öffnet ein modales Dialog-Fenster zur Bearbeitung von Einstellungswerten
+        wie Wochenstunden, Ampel-Grenzwerten, etc.
+        
+        Args:
+            field_label (str): Beschriftung des Feldes (z.B. "Wochenstunden")
+            current_value (str): Aktueller Wert des Feldes
+            label_attr (str): Attribut-Name des Labels in der View
+            
+        Note:
+            Je nach label_attr wird ein passender Input-Typ erstellt:
+            - week_hours_value_label: Spinner mit Werten 30, 35, 40
+            - green/red_limit_value_label: Nummerisches TextInput-Feld
+            - Sonstiges: Freies TextInput-Feld
+        """
 
         popup_layout = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(12))
 
@@ -1047,6 +1110,20 @@ class MainView(Screen):
         popup.open()
 
     def on_settings_value_selected(self, field_label, new_value, label_attr):
+        """
+        Event-Handler für Auswahl eines neuen Einstellungs-Werts.
+        
+        Wird ausgelöst, wenn im Bearbeitungs-Popup ein neuer Wert
+        übernommen wurde. Aktualisiert das entsprechende Label in der UI.
+        
+        Args:
+            field_label (str): Beschriftung des Feldes
+            new_value (str): Neuer Wert
+            label_attr (str): Attribut-Name des zu aktualisierenden Labels
+            
+        Note:
+            Formatiert Werte automatisch mit " h" Suffix für Stunden-Felder.
+        """
         if label_attr and hasattr(self, label_attr):
             if new_value:
                 if label_attr == "week_hours_value_label":
@@ -1081,6 +1158,19 @@ class MainView(Screen):
             widget.focus_next = widgets[(idx + 1) % len(widgets)]
 
     def _update_week_hours_input(self, _instance, value):
+        """
+        Synchronisiert das Wochenstunden-Anzeigelabel mit dem Eingabefeld.
+        
+        Verhindert Endlos-Schleifen bei bidirektionaler Datenbindung
+        durch Flag-basierte Synchronisations-Sperre.
+        
+        Args:
+            _instance: Widget-Instanz (nicht verwendet)
+            value (str): Neuer Wert des Labels
+            
+        Note:
+            Entfernt " h" Suffix vor der Synchronisation mit dem Spinner.
+        """
         if not hasattr(self, "week_hours_spinner") or self._syncing_week_hours:
             return
         cleaned = (value or "").strip()
@@ -1096,6 +1186,19 @@ class MainView(Screen):
             self._syncing_week_hours = False
 
     def _on_week_hours_spinner_change(self, _spinner, value):
+        """
+        Event-Handler für Änderungen am Wochenstunden-Spinner.
+        
+        Synchronisiert den Spinner-Wert zurück zum Anzeigelabel.
+        Verhindert durch Flag Endlos-Schleifen.
+        
+        Args:
+            _spinner: Spinner-Widget (nicht verwendet)
+            value (str): Ausgewählter Wert im Spinner
+            
+        Note:
+            Fügt automatisch " h" Suffix für Anzeige hinzu.
+        """
         if self._syncing_week_hours:
             return
         numeric = value.strip()
@@ -1112,6 +1215,19 @@ class MainView(Screen):
             self._syncing_week_hours = False
 
     def _update_green_limit_input(self, _instance, value):
+        """
+        Synchronisiert das grüne Ampel-Grenzwert-Label mit dem Eingabefeld.
+        
+        Verhindert Endlos-Schleifen bei bidirektionaler Datenbindung
+        durch Flag-basierte Synchronisations-Sperre.
+        
+        Args:
+            _instance: Widget-Instanz (nicht verwendet)
+            value (str): Neuer Wert des Labels
+            
+        Note:
+            Entfernt " h" Suffix vor der Synchronisation mit dem Input-Feld.
+        """
         if not hasattr(self, "green_limit_input") or self._syncing_green_limit:
             return
         cleaned = (value or "").strip()
@@ -1126,6 +1242,19 @@ class MainView(Screen):
             self._syncing_green_limit = False
 
     def _on_green_limit_input_change(self, _instance, value):
+        """
+        Event-Handler für Änderungen am grünen Ampel-Grenzwert-Eingabefeld.
+        
+        Synchronisiert den Input-Wert zurück zum Anzeigelabel.
+        Verhindert durch Flag Endlos-Schleifen.
+        
+        Args:
+            _instance: Widget-Instanz (nicht verwendet)
+            value (str): Neuer Wert des Input-Feldes
+            
+        Note:
+            Fügt automatisch " h" Suffix für Anzeige hinzu.
+        """
         if self._syncing_green_limit:
             return
         cleaned = value.strip()
@@ -1139,6 +1268,19 @@ class MainView(Screen):
             self._syncing_green_limit = False
 
     def _update_red_limit_input(self, _instance, value):
+        """
+        Synchronisiert das rote Ampel-Grenzwert-Label mit dem Eingabefeld.
+        
+        Verhindert Endlos-Schleifen bei bidirektionaler Datenbindung
+        durch Flag-basierte Synchronisations-Sperre.
+        
+        Args:
+            _instance: Widget-Instanz (nicht verwendet)
+            value (str): Neuer Wert des Labels
+            
+        Note:
+            Entfernt " h" Suffix vor der Synchronisation mit dem Input-Feld.
+        """
         if not hasattr(self, "red_limit_input") or self._syncing_red_limit:
             return
         cleaned = (value or "").strip()
@@ -1153,6 +1295,19 @@ class MainView(Screen):
             self._syncing_red_limit = False
 
     def _on_red_limit_input_change(self, _instance, value):
+        """
+        Event-Handler für Änderungen am roten Ampel-Grenzwert-Eingabefeld.
+        
+        Synchronisiert den Input-Wert zurück zum Anzeigelabel.
+        Verhindert durch Flag Endlos-Schleifen.
+        
+        Args:
+            _instance: Widget-Instanz (nicht verwendet)
+            value (str): Neuer Wert des Input-Feldes
+            
+        Note:
+            Fügt automatisch " h" Suffix für Anzeige hinzu.
+        """
         if self._syncing_red_limit:
             return
         cleaned = value.strip()
@@ -1227,19 +1382,42 @@ class TrafficLight(BoxLayout):
         """
         Setzt die Ampel auf den angegebenen Zustand.
         
+        Ampel-Zustände und Bedeutung:
+            "grün": Gleitzeit im positiven Bereich (< ampel_grün)
+                    → Alle Lichter auf Grundfarbe (0.3, 0.3, 0.3)
+                    → Grünes Licht auf (0, 1, 0)
+            
+            "gelb": Gleitzeit zwischen ampel_grün und ampel_rot (Achtungsbereich)
+                    → Alle Lichter auf Grundfarbe
+                    → Gelbes Licht auf (1, 1, 0)
+            
+            "rot": Gleitzeit über ampel_rot (kritisch positiv) ODER unter -ampel_grün (kritisch negativ)
+                   → Alle Lichter auf Grundfarbe
+                   → Rotes Licht auf (1, 0, 0)
+        
+        Rendering:
+            - Canvas mit drei Ellipsen (rot, gelb, grün von oben nach unten)
+            - Grundfarbe (gedimmt): rgb = (0.3, 0.3, 0.3)
+            - Aktive Farbe: rgb = volle Intensität (1.0)
+        
         Args:
             state (str): 'red', 'yellow' oder 'green'
+            
+        Note:
+            Die Ampel-Logik wird im Modell berechnet (set_ampel_farbe()),
+            diese Methode führt nur das visuelle Rendering durch.
         """
-
+        # === SCHRITT 1: Alle Lichter auf Grundfarbe (gedimmt) setzen ===
         for color, _ in self.lights.values():
-            color.rgb = (0.3, 0.3, 0.3)
+            color.rgb = (0.3, 0.3, 0.3)  # Dunkelgrau = "aus"
 
+        # === SCHRITT 2: Aktives Licht auf volle Farbe setzen ===
         if state == "red":
-            self.lights["red"][0].rgb = (1, 0, 0)
+            self.lights["red"][0].rgb = (1, 0, 0)  # Rot = Kritisch
         elif state == "yellow":
-            self.lights["yellow"][0].rgb = (1, 1, 0)
+            self.lights["yellow"][0].rgb = (1, 1, 0)  # Gelb = Achtung
         elif state == "green":
-            self.lights["green"][0].rgb = (0, 1, 0)
+            self.lights["green"][0].rgb = (0, 1, 0)  # Grün = OK
 
 
 class MonthCalendar(BoxLayout):
@@ -1377,26 +1555,77 @@ class MonthCalendar(BoxLayout):
         Füllt das Kalender-Grid mit den Tagen des Monats.
         
         Erstellt für jeden Tag eine DayCell und bindet Click-Events.
+        
+        Rendering-Prozess:
+            1. Grid leeren (alle bestehenden Widgets entfernen)
+            
+            2. Wochentage-Header hinzufügen (Mo, Di, Mi, ...)
+               - Wird hier nicht explizit gemacht (durch DayCell-Anordnung implizit)
+            
+            3. Ersten Tag des Monats ermitteln: date(year, month, 1)
+            
+            4. Wochentag des ersten Tages: first_day.weekday() (0=Mo, 6=So)
+            
+            5. Leere Zellen vor dem ersten Tag einfügen
+               - calendar.itermonthdates() gibt automatisch Tage des vorherigen Monats zurück
+            
+            6. Für jeden Tag des Monats:
+               - Ist Wochenende? (5=Sa, 6=So)
+               - Ist Feiertag? (holidays-Check via self.is_holiday())
+               - Ist Urlaubstag? (aus self.urlaubstage-Dict)
+               - Ist Krankheitstag? (aus self.krankheitstage-Dict)
+               - DayCell erstellen mit entsprechender Farbe:
+                 * Grün: Normaler Arbeitstag
+                 * Blau: Urlaub
+                 * Rot: Krankheit
+                 * Grau: Wochenende/Feiertag
+                 * Hellgrau: Anderer Monat (in_month=False)
+            
+            7. Click-Event binden: Bei Klick → on_day_selected(datum)
+            
+            8. Leere Zellen nach dem letzten Tag (zum Auffüllen auf volle Wochen)
+               - Ebenfalls automatisch durch calendar.itermonthdates()
+        
+        Note:
+            - calendar.itermonthdates() gibt IMMER vollständige Wochen zurück
+            - Tage anderer Monate haben in_month=False → werden ausgegraut
+            - Urlaubstage und Krankheitstage werden aus Controller geladen
         """
-
+        # === SCHRITT 1: Grid leeren ===
         self.grid.clear_widgets()
+        
+        # === SCHRITT 2-5: Kalender-Daten generieren ===
+        # calendar.Calendar(firstweekday=0): Woche beginnt am Montag
         cal = calendar.Calendar(firstweekday=0)
+        # itermonthdates(): Gibt ALLE Tage zurück, die im Kalender-Grid angezeigt werden
+        # (inkl. Tage vom vorherigen/nächsten Monat zum Auffüllen)
         month_days = list(cal.itermonthdates(self.year, self.month))
 
+        # === SCHRITT 6-8: Für jeden Tag eine DayCell erstellen ===
         for day in month_days:
+            # Prüfen ob Tag zum aktuellen Monat gehört
             in_month = (day.month == self.month)
 
-            weekday = day.weekday()
-            is_weekend = weekday >= 5
-            is_holiday = self.is_holiday(day)
-            is_vacation = day in self.urlaubstage  # Prüfen ob Urlaubstag
-            is_sick = day in self.krankheitstage  # Prüfen ob Krankheitstag
+            # === Eigenschaften des Tages ermitteln ===
+            weekday = day.weekday()  # 0=Mo, 1=Di, ..., 6=So
+            is_weekend = weekday >= 5  # Sa=5, So=6
+            is_holiday = self.is_holiday(day)  # Feiertags-Check (holidays-Library)
+            is_vacation = day in self.urlaubstage  # Urlaubstag? (aus Controller geladen)
+            is_sick = day in self.krankheitstage  # Krankheitstag? (aus Controller geladen)
 
+            # === DayCell erstellen ===
+            # DayCell entscheidet basierend auf Flags über Hintergrundfarbe
             self.cell = DayCell(day.day, in_month, is_weekend, is_holiday, is_vacation, is_sick)
+            
+            # === Click-Event binden ===
+            # Wenn Benutzer auf DayCell klickt: on_day_selected(datum) aufrufen
+            # Lambda mit d=day: Datum "einfrieren" für korrekten Callback-Parameter
             self.cell.bind(
                 on_touch_down=lambda instance, touch, d=day: self.on_day_selected(d) 
                 if instance.collide_point(*touch.pos) and touch.button == "left" else None
             )
+            
+            # === DayCell zum Grid hinzufügen ===
             self.grid.add_widget(self.cell)
 
     def aligned_label(self, **kwargs):
@@ -1588,7 +1817,20 @@ class MonthCalendar(BoxLayout):
 
 
     def is_holiday(self, date):
-        """Prüft, ob das gegebene Datum ein Feiertag ist"""
+        """
+        Prüft, ob das gegebene Datum ein Feiertag ist.
+        
+        Verwendet die holidays-Bibliothek zur Prüfung deutscher Feiertage.
+        
+        Args:
+            date (datetime.date): Zu prüfendes Datum
+            
+        Returns:
+            bool: True wenn Feiertag, False sonst
+            
+        Note:
+            Berücksichtigt bundesweite deutsche Feiertage.
+        """
 
         de_holidays = holidays.Germany(years=[date.year])
         return date in de_holidays
@@ -1745,8 +1987,15 @@ class DayCell(BoxLayout):
         """
         Fügt einen Eintrag als Label zur Zelle hinzu.
         
+        Erstellt ein farbiges Label für Einträge wie "Urlaub" oder "Krank"
+        in der Kalender-Zelle.
+        
         Args:
-            entry_text (str): Text des Eintrags
+            entry_text (str): Text des Eintrags (z.B. "Urlaub", "Krank")
+            color (tuple): RGBA-Farbtupel für den Hintergrund (z.B. (0.8, 0.9, 1, 1))
+            
+        Note:
+            Das Label passt sich automatisch der Zellengröße an.
         """
 
         lbl = Label(
