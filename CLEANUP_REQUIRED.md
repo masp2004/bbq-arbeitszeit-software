@@ -31,7 +31,7 @@ git push --force origin main
 
 ```bash
 git checkout develop
-git reset --hard 318ff07  
+git reset --hard 318ff07
 git push --force origin develop
 ```
 
@@ -120,7 +120,7 @@ Folgende Commits werden aus der Historie gelöscht:
 ## Was bleibt übrig?
 
 Nach der Bereinigung enthält das Repository nur noch:
-- **Ein Commit**: Initial commit (318ff07) vom 5. September 2025
+- **Ein Commit**: Initial commit (318ff07)
 - **Zwei Dateien**: 
   - `.gitignore` (Python Template)
   - `README.md` (Inhalt: "# Fallstudie")
