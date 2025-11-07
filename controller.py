@@ -138,7 +138,6 @@ class Controller():
             self._bind_safe(self.main_view.nachtragen_button, 'on_press', self.nachtragen_button_clicked)
             
             # Kalender-Navigation
-            # Kalender-Navigation
             self._bind_safe(self.main_view.month_calendar.prev_btn, 'on_release', self.prev_button_clicked)
             self._bind_safe(self.main_view.month_calendar.next_btn, 'on_release', self.next_button_clicked)
 
