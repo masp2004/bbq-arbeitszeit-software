@@ -51,51 +51,98 @@ class Controller():
         arbeitsfenster_warning_event: Geplantes Event für Arbeitsfenster-Warnung
         max_arbeitszeit_warning_event: Geplantes Event für Max-Arbeitszeit-Warnung
     """
+    
     def __init__(self):
+        """
+        Initialisiert den Controller und alle zugehörigen Komponenten.
+        
+        Erstellt und konfiguriert:
+        - Modell-Instanzen für Login und Zeiterfassung
+        - View-Instanzen für alle Screens (Login, Register, Main)
+        - ScreenManager für Navigation
+        - Event-Bindings für alle UI-Interaktionen
+        - Timer-Events für Echtzeit-Updates
+        
+        Der Initialisierungsprozess umfasst:
+        1. Modell- und View-Instanzen erstellen
+        2. Screens zum ScreenManager hinzufügen
+        3. Alle UI-Events mit safe_bind binden
+        4. Callbacks für Kalender und Tabs einrichten
+        5. Fehlerbehandlung für kritische Initialisierungsfehler
+        
+        Raises:
+            Exception: Bei kritischen Fehlern während der Initialisierung
+                      (z.B. Datenbankverbindung fehlgeschlagen)
+        
+        Note:
+            Bei Fehlern wird eine detaillierte Fehlermeldung geloggt.
+            Der Fehler wird nach oben weitergegeben, um die App zu stoppen.
+        """
         try:
+            # === Modell-Instanzen erstellen ===
             self.model_login = ModellLogin()
             self.model_track_time = ModellTrackTime()
+            
+            # === View-Komponenten erstellen ===
             self.sm = ScreenManager()
             self.register_view = RegisterView(name="register")
             self.login_view = LoginView(name="login")
             self.main_view = MainView(name="main")
             self.active_time_input = None
             
-            # Status für den Timer
+            # === Timer-Status initialisieren ===
+            # Für visuellen Timer (zeigt laufende Arbeitszeit an)
             self.timer_event = None
             self.start_time_dt = None
             
-            # Warnungs-Events für Arbeitsfenster und max. Arbeitszeit
+            # === Warnungs-Events initialisieren ===
+            # Für zeitgesteuerte PopUp-Warnungen (z.B. bei 10h Arbeitszeit)
             self.arbeitsfenster_warning_event = None
             self.max_arbeitszeit_warning_event = None
             
-            # Screens ins ScreenManager packen
+            # === Screens zum ScreenManager hinzufügen ===
             self.sm.add_widget(self.register_view)
             self.sm.add_widget(self.login_view)
             self.sm.add_widget(self.main_view)
-            self.sm.current = "login"
-            # === Bindings ===
-            # Binden der Funktionen mit Fehlerbehandlung
+            self.sm.current = "login"  # Startbildschirm ist Login
+            
+            # === Event-Bindings ===
+            # Alle UI-Events mit Fehlerbehandlung binden (safe_bind)
+            # Navigation zwischen Screens
             self._bind_safe(self.login_view.change_view_registrieren_button, 'on_press', self.change_view_register)
             self._bind_safe(self.register_view.change_view_login_button, 'on_press', self.change_view_login)
+            
+            # Login und Registrierung
             self._bind_safe(self.login_view.login_button, 'on_press', self.einloggen_button_clicked)
+            self._bind_safe(self.register_view.register_button, 'on_press', self.registrieren_button_clicked)
+            
+            # Einstellungen und Passwort
             self._bind_safe(self.main_view.change_password_button, 'on_press', self.passwort_ändern_button_clicked)
+            
+            # Datums- und Zeit-Picker
             self._bind_safe(self.register_view.reg_geburtsdatum, 'focus', self.show_date_picker)
             self._bind_safe(self.register_view.date_picker, 'on_save', self.on_date_selected_register)
             self._bind_safe(self.main_view.date_input, 'focus', self.show_date_picker)
             self._bind_safe(self.main_view.date_picker, 'on_save', self.on_date_selected_main)
             self._bind_safe(self.main_view.time_input, 'focus', self.show_time_picker)
             self._bind_safe(self.main_view.time_picker, 'on_save', self.on_time_selected)
+            
+            # Checkbox und Spinner
             self._bind_safe(self.main_view.checkbox, 'active', self.on_checkbox_changed)
             self._bind_safe(self.main_view.eintrag_art_spinner, 'text', self.on_eintrag_art_selected)
             self._bind_safe(self.main_view.month_calendar.employee_spinner, 'text', self.on_employee_selected)
-            self._bind_safe(self.register_view.register_button, 'on_press', self.registrieren_button_clicked)
             self._bind_safe(self.register_view.reg_woechentliche_arbeitszeit, 'text', self.on_weekly_hours_selected)
+            
+            # Zeiterfassungs-Buttons
             self._bind_safe(self.main_view.stempel_button, 'on_press', self.stempel_button_clicked)
             self._bind_safe(self.main_view.nachtragen_button, 'on_press', self.nachtragen_button_clicked)
+            
+            # Kalender-Navigation
+            # Kalender-Navigation
             self._bind_safe(self.main_view.month_calendar.prev_btn, 'on_release', self.prev_button_clicked)
             self._bind_safe(self.main_view.month_calendar.next_btn, 'on_release', self.next_button_clicked)
 
+            # Einstellungs-Buttons (mit Lambda-Funktionen für Parameter-Übergabe)
             self._bind_safe(
                 self.main_view.edit_week_hours_button,
                 'on_release',
@@ -122,13 +169,19 @@ class Controller():
                 self.logout_button_clicked
             )
 
+            # === Spezielle Callbacks (nicht über _bind_safe) ===
+            # Kalender-Tag-Auswahl
             self.main_view.month_calendar.day_selected_callback = self.day_selected
+            
+            # Einstellungs-Wert-Auswahl (Custom Event)
             self.main_view.bind(on_settings_value_selected=self.on_settings_value_selected)
 
-            # Controller-Referenz im MonthCalendar setzen für Edit/Delete-Callbacks
+            # Controller-Referenz im MonthCalendar setzen
+            # Ermöglicht dem Kalender, Bearbeitungs- und Lösch-Callbacks aufzurufen
             self.main_view.month_calendar.controller = self
             
-            # Tab-Wechsel beobachten: Beim Öffnen des Zeiterfassungs-/Gleitzeit-Tabs neu berechnen
+            # === Tab-Wechsel-Beobachtung ===
+            # Beim Öffnen des Zeiterfassungs-/Gleitzeit-Tabs Daten neu berechnen
             try:
                 self.main_view.layout.bind(current_tab=self.on_tab_changed)
             except Exception as e:
@@ -136,8 +189,9 @@ class Controller():
             
             logger.debug("Controller initialisiert und alle Widgets gebunden.")
         except Exception as e:
+            # Kritischer Fehler: App kann nicht initialisiert werden
             logger.critical(f"Kritischer Fehler während der Controller-Initialisierung: {e}", exc_info=True)
-            # Dieser Fehler muss nach oben weitergegeben werden, siehe main.py
+            # Fehler nach oben weitergeben, damit main.py die App stoppt
             raise
     
     # === Hilfsmethoden ===
@@ -632,6 +686,7 @@ class Controller():
                - checke_wochenstunden_minderjaehrige() - JArbSchG § 8 (40h/Woche)
                - checke_arbeitstage_pro_woche_minderjaehrige() - JArbSchG § 15 (max. 5 Tage)
                - checke_arbeitszeitfenster_minderjaehrige() - JArbSchG § 14 (6-20 Uhr)
+               - checke_pausenzeiten() - ArbZG § 4 / JArbSchG § 11 (Mindestpausen)
             6. Benachrichtigungs-Korrektur: pruefe_und_korrigiere_arbeitszeitschutz_benachrichtigungen()
                → Löscht Benachrichtigungen für korrigierte Verstöße (MUSS vor get_messages()!)
             7. Daten für UI holen: get_messages(), set_ampel_farbe(), kummuliere_gleitzeit()
@@ -927,7 +982,24 @@ class Controller():
         )
     
     def _stempel_nach_ruhezeiten_warnung(self):
-        """Führt den Stempel aus, nachdem die Ruhezeitenwarnung akzeptiert wurde."""
+        """
+        Führt die Stempel-Prüfkaskade fort, nachdem Ruhezeitenwarnung akzeptiert wurde.
+        
+        Setzt den Stempel-Prozess nach Bestätigung der Ruhezeitenwarnung fort.
+        Führt die verbleibenden Prüfungen durch:
+        - Urlaubstag-Prüfung
+        - 6-Tage-Woche-Prüfung (nur Minderjährige)
+        - Sonn-/Feiertagsprüfung
+        
+        Bei jeder Prüfung wird ein Dialog angezeigt, der eine Bestätigung erfordert.
+        Der Prozess wird bei "Nein" abgebrochen, bei "Ja" wird die nächste Prüfung aufgerufen.
+        
+        Callback-Kette:
+            Ruhezeiten-Warnung JA → Urlaubsprüfung → 6-Tage-Prüfung → Sonn-/Feiertag → Stempel ausführen
+        
+        Note:
+            Diese Methode wird als Callback von show_messagebox aufgerufen.
+        """
         from datetime import datetime, date as _date
         jetzt = datetime.now()
         datum_str = jetzt.strftime("%d.%m.%Y")
@@ -997,7 +1069,23 @@ class Controller():
             self._stempel_ausfuehren()
     
     def _stempel_nach_arbeitsfenster_warnung(self):
-        """Führt den Stempel aus, nachdem die Arbeitszeitfenster-Warnung akzeptiert wurde."""
+        """
+        Führt die Stempel-Prüfkaskade fort, nachdem Arbeitszeitfenster-Warnung akzeptiert wurde.
+        
+        Setzt den Stempel-Prozess nach Bestätigung der Arbeitszeitfenster-Warnung fort.
+        Führt die verbleibenden Prüfungen durch:
+        - Ruhezeiten-Prüfung
+        - Urlaubstag-Prüfung
+        - 6-Tage-Woche-Prüfung (nur Minderjährige)
+        - Sonn-/Feiertagsprüfung
+        
+        Callback-Kette:
+            Arbeitsfenster-Warnung JA → Ruhezeiten → Urlaub → 6-Tage → Sonn-/Feiertag → Stempel ausführen
+        
+        Note:
+            Diese Methode wird als Callback von show_messagebox aufgerufen.
+            Sie startet die zweite Prüfung in der Kaskade.
+        """
         from datetime import datetime, date as _date
         jetzt = datetime.now()
         datum_str = jetzt.strftime("%d.%m.%Y")
@@ -1098,22 +1186,49 @@ class Controller():
             self._stempel_ausfuehren()
     
     def _urlaub_loeschen_und_stempeln(self):
-        """Löscht Urlaubseintrag von heute und setzt anschließend den Stempel."""
+        """
+        Löscht den Urlaubseintrag für heute und führt anschließend den Stempel aus.
+        
+        Wird aufgerufen, wenn der Benutzer bestätigt hat, dass der Urlaubstag
+        gelöscht werden soll, um stattdessen zu stempeln.
+        
+        Ablauf:
+        1. Urlaubseintrag für heute aus DB löschen
+        2. Kalender-Urlaubstage neu laden (für UI-Aktualisierung)
+        3. Stempel-Prozess fortsetzen (_stempel_ausfuehren)
+        
+        Note:
+            Diese Methode wird als Callback von show_messagebox aufgerufen.
+            Bei Fehlern wird geloggt, aber der Stempel-Prozess fortgesetzt.
+        """
         from datetime import date as _date
         try:
             geloescht = self.model_track_time.loesche_urlaub_am_datum(_date.today())
             if geloescht:
-                # Urlaubstage im Kalender neu laden
+                # Urlaubstage im Kalender neu laden, damit die UI aktualisiert wird
                 self.model_track_time.aktuelle_kalendereinträge_für_id = self.model_track_time.aktueller_nutzer_id
                 self.load_vacation_days_for_calendar()
                 logger.info("Urlaubstag gelöscht – fahre mit Stempel fort.")
         except Exception as e:
             logger.error(f"Fehler beim Löschen des Urlaubstags: {e}", exc_info=True)
-        # Danach normal stempeln
+        
+        # Danach normal stempeln (unabhängig vom Lösch-Erfolg)
         self._stempel_ausfuehren()
 
     def _stempel_nach_6_tage_warnung(self):
-        """Führt den Stempel aus, nachdem die 6-Tage-Warnung akzeptiert wurde."""
+        """
+        Führt die Stempel-Prüfkaskade fort, nachdem 6-Tage-Warnung akzeptiert wurde.
+        
+        Setzt den Stempel-Prozess nach Bestätigung der 6-Tage-Warnung fort.
+        Prüft abschließend, ob der heutige Tag ein Sonn-/Feiertag ist.
+        
+        Callback-Kette:
+            6-Tage-Warnung JA → Sonn-/Feiertagsprüfung → Stempel ausführen
+        
+        Note:
+            Diese Methode wird nur für Minderjährige aufgerufen, die bereits
+            an 5 Tagen in der aktuellen Woche gearbeitet haben (JArbSchG § 15).
+        """
         from datetime import datetime, date as _date
         jetzt = datetime.now()
 
@@ -1138,8 +1253,27 @@ class Controller():
             self._stempel_ausfuehren()
 
     def _stempel_ausfuehren(self):
-        """Führt den eigentlichen Stempelvorgang aus."""
+        """
+        Führt den eigentlichen Stempelvorgang aus (letzte Stufe der Prüfkaskade).
+        
+        Dies ist die finale Methode in der Stempel-Callback-Kette.
+        Wird nur aufgerufen, wenn alle vorherigen Prüfungen bestanden/bestätigt wurden.
+        
+        Ablauf:
+        1. Stempel in Datenbank eintragen (model_track_time.stempel_hinzufügen)
+        2. Gleitzeit bis gestern neu berechnen
+        3. Ampel-Status aktualisieren (grün/gelb/rot)
+        4. Kumulierte Gleitzeit aktualisieren (Monat/Quartal/Jahr)
+        5. Visuellen Timer aktualisieren (zeigt laufende Arbeitszeit)
+        6. UI mit neuen Werten aktualisieren
+        
+        Note:
+            Bei Fehlern während der Berechnungen wird die UI trotzdem aktualisiert (finally).
+            PopUp-Warnungen für max. Arbeitszeit werden automatisch geplant.
+        """
+        # Stempel in DB eintragen
         self.model_track_time.stempel_hinzufügen()
+        
         # Nach dem Stempeln: Gleitzeit (bis gestern) neu berechnen, Ampel und Kumulierung aktualisieren
         try:
             self.model_track_time.berechne_gleitzeit()

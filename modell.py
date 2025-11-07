@@ -40,15 +40,31 @@ logger = logging.getLogger(__name__)
 
 def get_db_path():
     """
-    Bestimmt den Pfad zur Datenbankdatei.
-    Bei .exe: Im Ordner der .exe-Datei
-    Bei Entwicklung: Im aktuellen Arbeitsverzeichnis
+    Bestimmt den absoluten Pfad zur SQLite-Datenbankdatei.
+    
+    Die Funktion erkennt automatisch, ob die Anwendung als .exe (PyInstaller)
+    oder im Entwicklungsmodus läuft und passt den Pfad entsprechend an.
+    
+    Returns:
+        str: Absoluter Pfad zur system.db Datei
+        
+    Note:
+        Bei .exe-Dateien wird die DB im selben Ordner wie die .exe erstellt.
+        Im Entwicklungsmodus wird sie im Projektverzeichnis erstellt.
+        
+    Examples:
+        >>> get_db_path()
+        'C:\\Users\\...\\system.db'  # Im Entwicklungsmodus
+        >>> get_db_path()
+        'C:\\Program Files\\App\\system.db'  # Bei .exe
     """
     if getattr(sys, 'frozen', False):
         # Anwendung läuft als .exe (PyInstaller)
+        # sys.executable ist der Pfad zur .exe-Datei
         app_dir = os.path.dirname(sys.executable)
     else:
         # Anwendung läuft im Entwicklungsmodus
+        # __file__ ist der Pfad zu dieser modell.py Datei
         app_dir = os.path.dirname(os.path.abspath(__file__))
     
     db_path = os.path.join(app_dir, 'system.db')
@@ -57,7 +73,34 @@ def get_db_path():
 
 def initialize_database(db_path):
     """
-    Erstellt die Datenbank mit allen Tabellen, falls sie nicht existiert.
+    Erstellt eine neue SQLite-Datenbank mit allen erforderlichen Tabellen.
+    
+    Die Funktion prüft zunächst, ob die Datenbank bereits existiert.
+    Falls nicht, wird sie mit folgendem Schema erstellt:
+    
+    Tabellen:
+        - users: Mitarbeiterstammdaten, Authentifizierung, Einstellungen
+        - zeiteinträge: Ein-/Ausstempel-Zeitstempel
+        - benachrichtigungen: System-Warnungen und PopUps
+        - abwesenheiten: Urlaub, Krankheit, etc.
+        - wochenstunden_historie: Änderungen der Arbeitszeit (retroaktive Gültigkeit)
+    
+    Args:
+        db_path (str): Absoluter Pfad zur Datenbankdatei
+        
+    Raises:
+        Exception: Bei Fehlern während der Datenbank-Erstellung
+        
+    Note:
+        Falls die Datenbank bereits existiert, wird nichts unternommen.
+        Bei Fehlern wird eine kritische Log-Meldung erstellt und der Fehler weitergegeben.
+        
+    Schema-Details:
+        - users: Passwörter werden mit bcrypt gehasht (60 Zeichen)
+        - zeiteinträge: Validiert-Flag für Fehlstempel-Erkennung
+        - benachrichtigungen: PopUp-Flag für zeitgesteuerte Warnungen
+        - abwesenheiten: Typ-Constraint für gültige Abwesenheitsarten
+        - wochenstunden_historie: UNIQUE-Constraint für (mitarbeiter_id, gueltig_ab)
     """
     import sqlite3
     
@@ -68,8 +111,11 @@ def initialize_database(db_path):
     logger.info("Datenbank nicht gefunden. Erstelle neue Datenbank...")
     
     try:
+        # SQLite-Verbindung öffnen
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+        
+        # Alle Tabellen erstellen
         cursor.executescript('''
             CREATE TABLE IF NOT EXISTS users (
                 mitarbeiter_id INTEGER PRIMARY KEY,
@@ -120,21 +166,27 @@ def initialize_database(db_path):
         logger.critical(f"Fehler beim Erstellen der Datenbank: {e}", exc_info=True)
         raise
 
+# === Datenbank-Initialisierung ===
+# Dieser Block wird beim Import des Moduls ausgeführt
+
 try:
-    # Datenbankpfad bestimmen und ggf. Datenbank erstellen
+    # Schritt 1: Datenbankpfad bestimmen und ggf. Datenbank erstellen
     DB_PATH = get_db_path()
     initialize_database(DB_PATH)
     
-    # Datenbankverbindung aufbauen
+    # Schritt 2: SQLAlchemy-Engine und Session erstellen
+    # echo=False: SQL-Statements werden nicht geloggt (Performance)
     engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
     Base = saorm.declarative_base()
     Session = saorm.sessionmaker(bind=engine)
     session = Session()
+    
+    logger.info("Datenbank-Engine und Session erfolgreich erstellt.")
 except SQLAlchemyError as e:
+    # Kritischer Fehler: Ohne Datenbank kann die App nicht funktionieren
     logger.critical(f"Fehler beim Erstellen der DB-Engine oder Session: {e}", exc_info=True)
-    # Wenn das passiert, kann die App nicht funktionieren.
-    # In einer realen App würde man hier vielleicht beenden.
-    # Für Kivy lassen wir es, der Controller fängt die Fehler ab.
+    # Session auf None setzen, damit der Controller Fehler abfangen kann
+    # In einer produktiven App würde man hier die Anwendung beenden
     session = None
 
 class mitarbeiter(Base):
@@ -145,21 +197,38 @@ class mitarbeiter(Base):
     und aktuellen Status-Informationen.
     
     Attributes:
-        mitarbeiter_id (int): Eindeutige ID (Primary Key)
-        name (str): Vor- und Nachname (max. 30 Zeichen, eindeutig)
-        password (str): Bcrypt-gehashtes Passwort (60 Zeichen)
-        vertragliche_wochenstunden (int): Vereinbarte Wochenarbeitszeit
-        geburtsdatum (date): Geburtsdatum für Arbeitszeitschutz-Prüfungen
-        gleitzeit (float): Aktuelle Gleitzeit in Stunden (kann negativ sein)
-        letzter_login (date): Datum des letzten Logins
-        ampel_grün (int): Grüner Schwellwert für Gleitzeit-Ampel (Stunden)
-        ampel_rot (int): Roter Schwellwert für Gleitzeit-Ampel (Stunden)
-        vorgesetzter_id (int): ID des Vorgesetzten (Foreign Key, optional)
+        mitarbeiter_id (int): Eindeutige ID (Primary Key, auto-increment)
+        name (str): Vor- und Nachname (max. 30 Zeichen, eindeutig, NOT NULL)
+        password (str): Bcrypt-gehashtes Passwort (60 Zeichen, NOT NULL)
+        vertragliche_wochenstunden (int): Vereinbarte Wochenarbeitszeit (NOT NULL)
+        geburtsdatum (date): Geburtsdatum für Arbeitszeitschutz-Prüfungen (NOT NULL)
+        gleitzeit (float): Aktuelle Gleitzeit in Stunden (kann negativ sein, Default: 0.0)
+        letzter_login (date): Datum des letzten Logins (NOT NULL)
+        ampel_grün (int): Grüner Schwellwert für Gleitzeit-Ampel in Stunden (Default: 5)
+        ampel_rot (int): Roter Schwellwert für Gleitzeit-Ampel in Stunden (Default: 10)
+        vorgesetzter_id (int): ID des Vorgesetzten (Foreign Key zu users.mitarbeiter_id, optional)
+    
+    Methoden:
+        is_minor_on_date(datum): Prüft Minderjährigkeit an einem Datum
     
     Note:
-        Die Ampel-Werte sind symmetrisch: ±grün für ausgeglichen, ±rot für kritisch.
+        - Die Ampel-Werte sind symmetrisch: ±grün für ausgeglichen, ±rot für kritisch
+        - Passwort wird mit bcrypt gehasht (60 Zeichen)
+        - Name muss eindeutig sein (UNIQUE Constraint)
+        - Vorgesetzter ist optional (für hierarchische Strukturen)
+    
+    Beispiel:
+        >>> mitarbeiter_obj = mitarbeiter(
+        ...     name="Max Mustermann",
+        ...     password=hash_password("geheim123"),
+        ...     vertragliche_wochenstunden=40,
+        ...     geburtsdatum=date(1990, 1, 1),
+        ...     letzter_login=date.today()
+        ... )
     """
     __tablename__ = "users"
+    
+    # Spalten-Definitionen
     mitarbeiter_id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(30), unique=True, nullable=False)
     password = Column(String(60), nullable=False)  # 60 Zeichen für bcrypt-Hash
@@ -168,54 +237,85 @@ class mitarbeiter(Base):
     gleitzeit = Column(Float, nullable=False, default=0.0)  # Float für Dezimalwerte (Stunden mit Nachkommastellen)
     letzter_login = Column(Date, nullable=False)
     ampel_grün = Column(Integer, nullable=False, default=5)  # Grüne Schwelle: ±5h
-    ampel_rot = Column(Integer, nullable=False, default=10)  # Rote Schwelle: ±10h (geändert von -5)
+    ampel_rot = Column(Integer, nullable=False, default=10)  # Rote Schwelle: ±10h
     vorgesetzter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"))
 
     def is_minor_on_date(self, datum):
-            """
-            Prüft, ob der Mitarbeiter an einem bestimmten Datum minderjährig ist.
+        """
+        Prüft, ob der Mitarbeiter an einem bestimmten Datum minderjährig ist.
+        
+        Berechnet das Alter zum angegebenen Datum und prüft, ob es unter 18 Jahren liegt.
+        Wird für Arbeitszeitschutz-Prüfungen nach JArbSchG benötigt.
+        
+        Args:
+            datum (date): Das zu prüfende Datum
             
-            Args:
-                datum (date): Das zu prüfende Datum
-                
-            Returns:
-                bool: True wenn unter 18 Jahren, sonst False
-                
-            Note:
-                Berücksichtigt Monat und Tag für präzise Altersberechnung.
-                Bei fehlenden Daten oder ungültigem Typ wird False zurückgegeben.
-            """
-            # Input-Validierung
-            if not self.geburtsdatum:
-                logger.warning(f"is_minor_on_date für {self.name} ohne Geburtsdatum aufgerufen.")
-                return False
-            if not isinstance(datum, date):
-                logger.error(f"is_minor_on_date erhielt ungültigen Datumstyp: {type(datum)}")
-                try:
-                    # Versuch einer Notfall-Konvertierung
-                    datum = datetime.strptime(str(datum), "%Y-%m-%d").date()
-                except ValueError:
-                    return False # Konnte nicht konvertiert werden
+        Returns:
+            bool: True wenn unter 18 Jahren, sonst False
             
-    
-            age = datum.year - self.geburtsdatum.year - ((datum.month, datum.day) < (self.geburtsdatum.month, self.geburtsdatum.day))
-            return age < 18
+        Note:
+            Verwendet eine exakte Altersberechnung basierend auf Jahr, Monat und Tag.
+            Berücksichtigt Monat und Tag für präzise Altersberechnung.
+            Bei fehlenden Daten oder ungültigem Typ wird False zurückgegeben.
+            
+        Examples:
+            >>> m = mitarbeiter(geburtsdatum=date(2010, 5, 15))
+            >>> m.is_minor_on_date(date(2025, 5, 14))
+            True  # Noch nicht 18
+            >>> m.is_minor_on_date(date(2028, 5, 16))
+            False  # 18 Jahre alt
+        """
+        # Input-Validierung: Geburtsdatum vorhanden?
+        if not self.geburtsdatum:
+            logger.warning(f"is_minor_on_date für {self.name} ohne Geburtsdatum aufgerufen.")
+            return False
+        
+        # Input-Validierung: Datum ist vom richtigen Typ?
+        if not isinstance(datum, date):
+            logger.error(f"is_minor_on_date erhielt ungültigen Datumstyp: {type(datum)}")
+            try:
+                # Versuch einer Notfall-Konvertierung
+                datum = datetime.strptime(str(datum), "%Y-%m-%d").date()
+            except ValueError:
+                return False  # Konnte nicht konvertiert werden
+        
+        # Altersberechnung: Jahre minus 1 falls Geburtstag noch nicht war dieses Jahr
+        age = datum.year - self.geburtsdatum.year - ((datum.month, datum.day) < (self.geburtsdatum.month, self.geburtsdatum.day))
+        return age < 18
 
 
 class Abwesenheit(Base):
     """
-    SQLAlchemy ORM-Modell für Abwesenheiten.
+    SQLAlchemy ORM-Modell für Abwesenheiten (Urlaub, Krankheit, etc.).
     
-    Repräsentiert Abwesenheiten wie Urlaub, Krankheit, Fortbildung, etc.
+    Repräsentiert einzelne Tage, an denen ein Mitarbeiter abwesend ist.
+    Jede Abwesenheit ist einem bestimmten Datum zugeordnet.
     
     Attributes:
-        id (int): Eindeutige ID (Primary Key)
-        mitarbeiter_id (int): ID des Mitarbeiters (Foreign Key)
-        datum (date): Datum der Abwesenheit
-        typ (str): Art der Abwesenheit ('Urlaub', 'Krankheit', 'Fortbildung', 'Sonstiges')
-        genehmigt (bool): Genehmigungsstatus der Abwesenheit
+        id (int): Eindeutige ID (Primary Key, auto-increment)
+        mitarbeiter_id (int): ID des Mitarbeiters (Foreign Key zu users.mitarbeiter_id, NOT NULL)
+        datum (date): Datum der Abwesenheit (NOT NULL)
+        typ (str): Art der Abwesenheit (NOT NULL, CHECK Constraint)
+            Gültige Werte: 'Urlaub', 'Krankheit', 'Fortbildung', 'Sonstiges'
+        genehmigt (bool): Genehmigungsstatus (Default: False)
+    
+    Note:
+        - Mehrere Abwesenheitstage werden als separate Einträge gespeichert
+        - Der Typ unterliegt einem CHECK Constraint (nur 4 gültige Werte)
+        - Genehmigungsstatus ermöglicht Workflow für Urlaubsanträge
+        - Bei Urlaub wird automatisch geprüft, ob bereits Stempel vorhanden sind
+    
+    Beispiel:
+        >>> urlaub = Abwesenheit(
+        ...     mitarbeiter_id=1,
+        ...     datum=date(2025, 12, 24),
+        ...     typ='Urlaub',
+        ...     genehmigt=True
+        ... )
     """
     __tablename__ = "abwesenheiten"
+    
+    # Spalten-Definitionen
     id = Column(Integer, primary_key=True, autoincrement=True)
     mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
     datum = Column(Date, nullable=False)
@@ -225,22 +325,41 @@ class Abwesenheit(Base):
 
 class Zeiteintrag(Base):
     """
-    SQLAlchemy ORM-Modell für Zeiteinträge (Stempel).
+    SQLAlchemy ORM-Modell für Zeiteinträge (Ein-/Ausstempel-Zeitstempel).
     
-    Repräsentiert eine einzelne Ein- oder Ausstempelung.
+    Repräsentiert einen einzelnen Stempel (Einstempel oder Ausstempel).
+    Die Arbeitszeit wird aus Paaren von aufeinanderfolgenden Stempeln berechnet.
     
     Attributes:
-        id (int): Eindeutige ID (Primary Key)
-        mitarbeiter_id (int): ID des Mitarbeiters (Foreign Key)
-        zeit (time): Uhrzeit des Stempels
-        datum (date): Datum des Stempels
-        validiert (bool): Ob der Stempel bereits für Gleitzeit-Berechnung verwendet wurde
-        
+        id (int): Eindeutige ID (Primary Key, auto-increment)
+        mitarbeiter_id (int): ID des Mitarbeiters (Foreign Key zu users.mitarbeiter_id, NOT NULL)
+        zeit (time): Uhrzeit des Stempels (HH:MM:SS, NOT NULL)
+        datum (date): Datum des Stempels (NOT NULL)
+        validiert (bool): Flag für Fehlstempel-Erkennung (Default: False)
+    
     Note:
-        Ein- und Ausstempelungen werden durch ungerade/gerade Anzahl unterschieden.
-        Validierte Einträge wurden bereits in der Gleitzeit-Berechnung berücksichtigt.
+        - Stempel werden chronologisch sortiert
+        - Ungerade Anzahl = Fehlstempel (nicht validiert)
+        - Gerade Anzahl = Vollständige Arbeitsblöcke
+        - Zeit wird in Time-Format gespeichert (keine Sekunden in UI)
+        - Datum und Zeit sind getrennt für bessere Abfragen
+    
+    Arbeitszeit-Berechnung:
+        - Stempel 1 (Einstempel) → Stempel 2 (Ausstempel) = Arbeitsblock 1
+        - Stempel 3 (Einstempel) → Stempel 4 (Ausstempel) = Arbeitsblock 2
+        - Summe aller Blöcke = Tagesarbeitszeit
+    
+    Beispiel:
+        >>> einstempel = Zeiteintrag(
+        ...     mitarbeiter_id=1,
+        ...     zeit=time(8, 0, 0),
+        ...     datum=date.today(),
+        ...     validiert=False
+        ... )
     """
     __tablename__ = "zeiteinträge"
+    
+    # Spalten-Definitionen
     id = Column(Integer, primary_key=True, autoincrement=True)
     mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
     zeit = Column(Time, nullable=False)
@@ -250,39 +369,67 @@ class Zeiteintrag(Base):
 
 class Benachrichtigungen(Base):
     """
-    SQLAlchemy ORM-Modell für Benachrichtigungen.
+    SQLAlchemy ORM-Modell für Benachrichtigungen (Warnungen und PopUps).
     
-    Repräsentiert System-Benachrichtigungen und PopUp-Warnungen.
+    Repräsentiert System-Benachrichtigungen für Arbeitszeitschutz-Verstöße,
+    fehlende Stempel und zeitgesteuerte Warnungen (PopUps).
     
     Attributes:
-        id (int): Eindeutige ID (Primary Key)
-        mitarbeiter_id (int): ID des Mitarbeiters (Foreign Key)
-        benachrichtigungs_code (int): Code der Benachrichtigung (1-10)
-        datum (date): Betroffenes Datum (optional)
-        ist_popup (bool): True für zeitgesteuerte PopUps, False für normale Benachrichtigungen
-        popup_uhrzeit (time): Geplante Uhrzeit für PopUp (nur bei ist_popup=True)
+        id (int): Eindeutige ID (Primary Key, auto-increment)
+        mitarbeiter_id (int): ID des Mitarbeiters (Foreign Key zu users.mitarbeiter_id, NOT NULL)
+        benachrichtigungs_code (int): Code der Benachrichtigung (1-12, NOT NULL)
+        datum (date): Betroffenes Datum (optional, für tagbezogene Warnungen)
+        ist_popup (bool): True für zeitgesteuerte PopUps, False für dauerhafte Benachrichtigungen (Default: False)
+        popup_uhrzeit (time): Geplante Uhrzeit für PopUp-Anzeige (nur bei ist_popup=True, optional)
+    
+    Class Attributes:
+        CODES (dict): Mapping von Code-Nummern zu Benachrichtigungstexten
+    
+    Methoden:
+        create_fehlermeldung(): Erstellt formatierte Benachrichtigung mit Datum
         
     Benachrichtigungs-Codes:
-        1: Fehlstempel
-        2: Fehlender Arbeitstag
-        3: Ruhezeitenverletzung
-        4: Durchschnittliche Arbeitszeit > 8h
-        5: Maximale Arbeitszeit überschritten
+        1: Fehlender Arbeitstag (wurde nicht gestempelt)
+        2: Fehlstempel (ungerade Anzahl Stempel an einem Tag)
+        3: Ruhezeitenverletzung (< 11h Pause zwischen Arbeitstagen)
+        4: Durchschnittliche Arbeitszeit > 8h (über 6 Monate)
+        5: Maximale Arbeitszeit überschritten (> 10h an einem Tag)
         6: Arbeit an Sonn-/Feiertag
-        7: Wochenstunden > 40h (Minderjährige)
-        8: > 5 Arbeitstage/Woche (Minderjährige)
-        9: Arbeitsfenster-Warnung (PopUp)
-        10: Max. Arbeitszeit-Warnung (PopUp)
+        7: Wochenstunden > 40h (nur Minderjährige, JArbSchG § 8)
+        8: > 5 Arbeitstage/Woche (nur Minderjährige, JArbSchG § 15)
+        9: Arbeitsfenster-Verstoß (außerhalb 6-20 Uhr für Minderjährige)
+        10: Arbeitsfenster-Warnung (PopUp: Fenster endet bald)
+        11: Max. Arbeitszeit-Warnung (PopUp: 10h bald erreicht)
+        12: Pausenzeiten nicht eingehalten (ArbZG § 4 / JArbSchG § 11)
+    
+    Note:
+        - UNIQUE Constraint verhindert Duplikate (mitarbeiter_id, code, datum)
+        - PopUps (Codes 10, 11) sind temporär und werden nach Anzeige gelöscht
+        - Dauerhafte Benachrichtigungen (Codes 1-9, 12) bleiben bis zur Korrektur
+        - popup_uhrzeit wird bei Code 10/11 berechnet (z.B. 1h vor Fenster-Ende)
+    
+    Beispiel:
+        >>> benachrichtigung = Benachrichtigungen(
+        ...     mitarbeiter_id=1,
+        ...     benachrichtigungs_code=3,
+        ...     datum=date(2025, 11, 7),
+        ...     ist_popup=False
+        ... )
+        >>> benachrichtigung.create_fehlermeldung()
+        "Achtung, am 07.11.2025 wurden die gesetzlichen Ruhezeiten nicht eingehalten"
     """
     __tablename__ = "benachrichtigungen"
+    
+    # Spalten-Definitionen
     id = Column(Integer, primary_key=True, autoincrement=True)
     mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
     benachrichtigungs_code = Column(Integer, nullable=False)
-    datum = Column(Date)
+    datum = Column(Date)  # Nullable für Codes ohne Datum (z.B. Code 4)
     ist_popup = Column(Boolean, nullable=False, default=False)  # True = PopUp, False = normale Benachrichtigung
     popup_uhrzeit = Column(Time, nullable=True)  # Optionale Uhrzeit für zeitgesteuerte PopUps
 
-    # Texte für Benachrichtigungen (verwendet in der View-Layer)
+    # === Klassen-Konstante: Benachrichtigungstexte ===
+    # Texte für Benachrichtigungen (verwendet im create_fehlermeldung())
     CODES = {
         1.1: "An den Tag",
         1.2: "wurde nicht gestempelt. Es wird für jeden Tag die Tägliche arbeitszeit der Gleitzeit abgezogen",
@@ -300,11 +447,34 @@ class Benachrichtigungen(Base):
         12: ["Achtung, am", "wurden die gesetzlich vorgeschriebenen Pausenzeiten nicht eingehalten."]
     }
 
+    # === Constraints ===
+    # UNIQUE Constraint: Verhindert Duplikate für denselben Tag und Code
     __table_args__ = (
         UniqueConstraint("mitarbeiter_id", "benachrichtigungs_code", "datum", name="uq_benachrichtigung_unique"),
     )
 
     def create_fehlermeldung(self):
+        """
+        Erstellt eine formatierte Benachrichtigungsnachricht mit Datum.
+        
+        Kombiniert den Benachrichtigungstext aus CODES mit dem Datum (falls vorhanden).
+        Behandelt verschiedene Nachrichtenformate (String, List, float-Keys).
+        
+        Returns:
+            str: Formatierte Benachrichtigung mit Datum
+            
+        Note:
+            - Datum wird im Format DD.MM.YYYY formatiert
+            - Code 1: "An den Tag DD.MM.YYYY wurde nicht gestempelt..."
+            - Code 2: "Am DD.MM.YYYY fehlt ein Stempel..."
+            - Code 4: "Achtung, Ihre durchschnittliche..." (kein Datum)
+            - Codes 3, 5-9, 12: "Achtung, am DD.MM.YYYY ..." (List-Format)
+        
+        Examples:
+            >>> b = Benachrichtigungen(benachrichtigungs_code=3, datum=date(2025, 11, 7))
+            >>> b.create_fehlermeldung()
+            "Achtung, am 07.11.2025 wurden die gesetzlichen Ruhezeiten nicht eingehalten"
+        """
         # Wandle Code in String um, um Suffix-Probleme (1.1 vs 1) zu vermeiden
         code_str = str(self.benachrichtigungs_code)
 
@@ -350,33 +520,52 @@ class Benachrichtigungen(Base):
 
 class VertragswochenstundenHistorie(Base):
     """
-    SQLAlchemy ORM-Modell für Wochenstunden-Historie.
+    SQLAlchemy ORM-Modell für Wochenstunden-Historie (retroaktive Gültigkeit).
     
     Speichert Änderungen der vertraglichen Wochenarbeitszeit mit Gültigkeitsdatum.
     Ermöglicht historische Auswertungen und korrekte Gleitzeit-Berechnungen
     bei Änderungen der Arbeitszeit.
     
     Attributes:
-        id (int): Eindeutige ID (Primary Key)
-        mitarbeiter_id (int): ID des Mitarbeiters (Foreign Key)
-        gueltig_ab (date): Ab wann die neuen Wochenstunden gelten
-        wochenstunden (int): Neue vertragliche Wochenarbeitszeit
-        
+        id (int): Eindeutige ID (Primary Key, auto-increment)
+        mitarbeiter_id (int): ID des Mitarbeiters (Foreign Key zu users.mitarbeiter_id, NOT NULL)
+        gueltig_ab (date): Ab welchem Datum die neuen Wochenstunden gelten (NOT NULL)
+        wochenstunden (int): Neue vertragliche Wochenarbeitszeit in Stunden (NOT NULL)
+    
+    Use Case:
+        Wenn ein Mitarbeiter von Vollzeit (40h) auf Teilzeit (20h) wechselt,
+        wird ein Eintrag mit gueltig_ab=Wechseldatum erstellt. Die Gleitzeit-
+        Berechnung verwendet dann automatisch die korrekten Sollstunden.
+    
     Note:
-        Pro Mitarbeiter und Datum kann nur ein Eintrag existieren (Unique Constraint).
+        - UNIQUE Constraint: Pro Mitarbeiter nur ein Eintrag pro Datum
+        - Aktuelle Wochenstunden sind auch in mitarbeiter.vertragliche_wochenstunden
+        - Historie wird für retroaktive Korrekturen verwendet
+        
+    Beispiel:
+        >>> historie = VertragswochenstundenHistorie(
+        ...     mitarbeiter_id=1,
+        ...     gueltig_ab=date(2025, 1, 1),
+        ...     wochenstunden=20  # Wechsel von 40h auf 20h
+        ... )
     """
     __tablename__ = "wochenstunden_historie"
+    
+    # Spalten-Definitionen
     id = Column(Integer, primary_key=True, autoincrement=True)
     mitarbeiter_id = Column(Integer, ForeignKey("users.mitarbeiter_id"), nullable=False)
     gueltig_ab = Column(Date, nullable=False)
     wochenstunden = Column(Integer, nullable=False)
 
+    # UNIQUE Constraint: Verhindert mehrere Einträge für denselben Tag
     __table_args__ = (
         UniqueConstraint("mitarbeiter_id", "gueltig_ab", name="uq_wochenstunden_historie_eintrag"),
     )
 
 
 # === Hilfsfunktionen ===
+# Standalone-Funktionen für Datums-/Zeit-Konvertierung, Passwort-Hashing
+# und Arbeitszeitberechnungen
 
 def _normalize_to_date(value):
     """
@@ -408,25 +597,41 @@ def _normalize_to_date(value):
 
 
 # === Passwort-Verschlüsselungs-Hilfsfunktionen ===
+
 def hash_password(password: str) -> str:
     """
-    Hasht ein Passwort mit bcrypt.
+    Hasht ein Passwort mit bcrypt (Salted Hashing).
+    
+    Verwendet bcrypt für sichere Passwort-Verschlüsselung mit automatischem Salt.
+    Der Hash ist 60 Zeichen lang und enthält Salt + Algorithmus-Info.
     
     Args:
-        password: Das Klartext-Passwort
+        password (str): Das Klartext-Passwort
         
     Returns:
-        Der bcrypt-Hash als String
+        str: Der bcrypt-Hash (60 Zeichen)
+        
+    Raises:
+        ValueError: Wenn Passwort leer oder None ist
+        
+    Note:
+        - Verwendet bcrypt.gensalt() für automatisches Salt
+        - Hash-Format: $2b$12$[22-Zeichen-Salt][31-Zeichen-Hash]
+        - Jeder Aufruf mit gleichem Passwort erzeugt unterschiedlichen Hash (Salt!)
+        
+    Example:
+        >>> hash_password("mein_passwort123")
+        '$2b$12$KIXxFz...'  # 60 Zeichen
     """
     if not password:
         raise ValueError("Passwort darf nicht leer sein")
     
     # Passwort in bytes konvertieren und hashen
     password_bytes = password.encode('utf-8')
-    salt = bcrypt.gensalt()
+    salt = bcrypt.gensalt()  # Automatisches Salt generieren
     hashed = bcrypt.hashpw(password_bytes, salt)
     
-    # Hash als String zurückgeben
+    # Hash als String zurückgeben (60 Zeichen)
     return hashed.decode('utf-8')
 
 
@@ -434,12 +639,27 @@ def verify_password(password: str, hashed_password: str) -> bool:
     """
     Verifiziert ein Passwort gegen einen bcrypt-Hash.
     
+    Vergleicht das eingegebene Klartext-Passwort mit dem gespeicherten Hash.
+    Verwendet bcrypt.checkpw() für sichere Verifikation.
+    
     Args:
-        password: Das zu prüfende Klartext-Passwort
-        hashed_password: Der bcrypt-Hash
+        password (str): Das zu prüfende Klartext-Passwort
+        hashed_password (str): Der gespeicherte bcrypt-Hash (60 Zeichen)
         
     Returns:
-        True wenn das Passwort korrekt ist, sonst False
+        bool: True wenn das Passwort korrekt ist, False sonst
+        
+    Note:
+        - Gibt False zurück bei leeren/None-Werten
+        - Fängt alle Exceptions ab und gibt False zurück
+        - Wird beim Login verwendet für Authentifizierung
+        
+    Example:
+        >>> hashed = hash_password("test123")
+        >>> verify_password("test123", hashed)
+        True
+        >>> verify_password("falsch", hashed)
+        False
     """
     if not password or not hashed_password:
         return False
@@ -453,39 +673,55 @@ def verify_password(password: str, hashed_password: str) -> bool:
         return False
 
 
+# === Wochenstunden-Ermittlung mit retroaktiver Gültigkeit ===
+
 def hole_wochenstunden_am_datum(mitarbeiter_id, datum, fallback_wochenstunden):
     """
-    Ermittelt die gültigen Wochenstunden für einen Mitarbeiter an einem Datum.
+    Ermittelt die gültigen Wochenstunden für einen Mitarbeiter an einem bestimmten Datum.
     
     Sucht in der Wochenstunden-Historie nach dem passenden Eintrag für das
     angegebene Datum und gibt die zu diesem Zeitpunkt gültigen Wochenstunden zurück.
     
     WICHTIG: Der zeitlich ERSTE Eintrag in der Historie gilt auch rückwirkend
     für alle Zeiteinträge VOR seinem gueltig_ab-Datum. Dadurch werden alle
-    Einträge in der Vergangenheit mit den gleichen Wochenstunden behandelt.
+    Einträge in der Vergangenheit mit denselben Wochenstunden behandelt.
+    Dies ermöglicht korrekte Gleitzeit-Berechnungen bei nachträglichen
+    Arbeitszeitänderungen.
     
     Args:
         mitarbeiter_id (int): ID des Mitarbeiters
-        datum: Datum als date, datetime oder String
+        datum: Datum als date, datetime oder String (wird normalisiert)
         fallback_wochenstunden (int): Rückgabewert wenn keine Historie gefunden wird
         
     Returns:
         int: Gültige Wochenstunden am angegebenen Datum oder Fallback-Wert
         
-    Note:
-        Logik:
-        1. Suche Eintrag mit gueltig_ab <= datum (wie bisher)
+    Logik:
+        1. Suche Eintrag mit gueltig_ab <= datum (Standardfall)
         2. Falls KEIN Eintrag gefunden: Hole den zeitlich ERSTEN Eintrag (ältester gueltig_ab)
+           → Dieser gilt retroaktiv für alle Vergangenheit
         3. Wenn auch das fehlschlägt: Fallback-Wert verwenden
+    
+    Example:
+        >>> # Historie: 01.01.2024 → 40h, 01.07.2024 → 20h
+        >>> hole_wochenstunden_am_datum(1, date(2023, 12, 1), 40)
+        40  # Retroaktiv gültig (ältester Eintrag)
+        >>> hole_wochenstunden_am_datum(1, date(2024, 6, 1), 40)
+        40  # Eintrag vom 01.01.2024
+        >>> hole_wochenstunden_am_datum(1, date(2024, 8, 1), 40)
+        20  # Eintrag vom 01.07.2024
     """
+    # Validierung: Mitarbeiter-ID vorhanden?
     if not mitarbeiter_id:
         return fallback_wochenstunden
 
+    # Datum normalisieren (String → date)
     datum = _normalize_to_date(datum)
     if datum is None:
         logger.debug("hole_wochenstunden_am_datum: Ungültiges Datum übergeben, verwende Fallback")
         return fallback_wochenstunden
 
+    # Session-Check
     if not session:
         logger.error("hole_wochenstunden_am_datum: Keine aktive DB-Session, verwende Fallback")
         return fallback_wochenstunden
