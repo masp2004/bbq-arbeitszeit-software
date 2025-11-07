@@ -91,14 +91,12 @@ Falls das Löschen der Historie nicht zwingend erforderlich ist:
 # Alle Dateien außer .gitignore und README.md löschen
 # Und README.md auf ursprünglichen Inhalt zurücksetzen
 git checkout main
-# Alle Dateien außer .gitignore und README.md löschen
-# README.md auf "# Fallstudie" zurücksetzen
 git add .
 git commit -m "Clean up repository, keep only .gitignore and README.md"
 git push origin main
 ```
-**Vorteil**: Keine Force-Push erforderlich, Historie bleibt erhalten
-**Nachteil**: Alte Commits bleiben in der Historie sichtbar
+- **Vorteil**: Keine Force-Push erforderlich, Historie bleibt erhalten
+- **Nachteil**: Alte Commits bleiben in der Historie sichtbar
 
 ## Was wird entfernt?
 
