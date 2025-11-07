@@ -550,6 +550,17 @@ class MainView(Screen):
         
         Ermöglicht das Hinzufügen von Zeitstempeln mit gewähltem Datum und Uhrzeit
         sowie das Eintragen von Urlaub und Krankheit.
+        
+        UI-Komponenten:
+            - Spinner zur Auswahl der Eintragsart (Zeitstempel/Urlaub/Krankheit)
+            - DatePicker für Datum-Auswahl
+            - TimePicker für Uhrzeit-Auswahl (nur bei Zeitstempeln)
+            - Button zum Speichern
+            - Feedback-Label für Rückmeldungen
+            
+        Note:
+            Die Uhrzeit-Felder werden automatisch ausgeblendet,
+            wenn Urlaub oder Krankheit ausgewählt wird.
         """
         
         self.zeitnachtrag_tab = TabbedPanelItem(text="Zeit nachtragen")
@@ -677,9 +688,16 @@ class MainView(Screen):
         """
         Fügt eine einzelne Benachrichtigung zum Grid hinzu.
         
+        Erstellt eine visuell ansprechende Benachrichtigungs-Karte mit Text,
+        Datum und abgerundetem Hintergrund.
+        
         Args:
-            text (str): Text der Benachrichtigung
-            datum: Datum der Benachrichtigung
+            text (str): Text der Benachrichtigung (z.B. "Fehlende Arbeitstage")
+            datum (date/str): Datum der Benachrichtigung
+            
+        Note:
+            Benachrichtigungen werden in umgekehrter chronologischer Reihenfolge
+            angezeigt (neueste zuerst).
         """
 
         box = BoxLayout(
@@ -943,13 +961,25 @@ class MainView(Screen):
         """
         Zeigt eine Messagebox mit optionalen Buttons.
         
+        Erstellt ein modales Popup mit einer Nachricht und bis zu zwei Buttons
+        für Benutzerinteraktion.
+        
         Args:
-            title: Titel des Popups
-            message: Nachricht
-            callback_yes: Callback für "Ja/OK/Fortfahren"-Button
-            callback_no: Callback für "Nein/Abbrechen"-Button (optional)
-            yes_text: Text für den Ja-Button (Standard: "OK")
-            no_text: Text für den Nein-Button (optional, wenn None wird nur ein Button angezeigt)
+            title (str): Titel des Popups
+            message (str): Nachricht im Popup
+            callback_yes (callable): Callback für "Ja/OK/Fortfahren"-Button
+            callback_no (callable): Callback für "Nein/Abbrechen"-Button (optional)
+            yes_text (str): Text für den Ja-Button (Standard: "OK")
+            no_text (str): Text für den Nein-Button (optional, wenn None: nur ein Button)
+            
+        Use Cases:
+            - Bestätigungsdialog: yes_text="Ja", no_text="Nein"
+            - Warndialog: yes_text="Verstanden", no_text="Abbrechen"
+            - Info-Dialog: yes_text="OK", no_text=None (nur OK-Button)
+            
+        Note:
+            Das Popup ist modal (auto_dismiss=False) und blockiert die Interaktion
+            mit dem Hauptfenster bis zur Button-Betätigung.
         """
         layout = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(12))
 
