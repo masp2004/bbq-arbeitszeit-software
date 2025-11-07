@@ -291,7 +291,7 @@ class Controller():
     def logout_button_clicked(self, *_):
         """
         Loggt den Nutzer aus und kehrt zur Login-Seite zurück.
-        Setzt alle relevanten Modell-Daten zurück.
+        Setzt alle relevanten Modell-, Controller- und View-Daten zurück.
         """
         logger.info(f"Logout-Versuch für Nutzer ID: {self.model_track_time.aktueller_nutzer_id if self.model_track_time else 'None'}")
         
@@ -300,14 +300,29 @@ class Controller():
             self.timer_event.cancel()
             self.timer_event = None
         
-        # Model zurücksetzen
+        # Model Track Time zurücksetzen
         if self.model_track_time:
+            # Nutzer-Daten
             self.model_track_time.aktueller_nutzer_id = None
             self.model_track_time.aktueller_nutzer_name = None
             self.model_track_time.aktueller_nutzer_gleitzeit = 0
             self.model_track_time.aktueller_nutzer_vertragliche_wochenstunden = 0
             self.model_track_time.benachrichtigungen = []
             self.model_track_time._cached_aktueller_nutzer = None
+            
+            # Kalender-Daten zurücksetzen
+            self.model_track_time.aktuelle_kalendereinträge_für_id = None
+            self.model_track_time.aktuelle_kalendereinträge_für_name = None
+            self.model_track_time.bestimmtes_datum = None
+            self.model_track_time.zeiteinträge_bestimmtes_datum = None
+            self.model_track_time.gleitzeit_bestimmtes_datum_stunden = 0.0
+            
+            # Nachtrag-Daten zurücksetzen
+            self.model_track_time.nachtragen_datum = None
+            self.model_track_time.manueller_stempel_uhrzeit = None
+            
+            # Weitere Modell-Variablen
+            self.model_track_time.feedback_stempel = ""
         
         # Login-Model zurücksetzen
         if self.model_login:
@@ -322,7 +337,27 @@ class Controller():
             self.login_view.password_input.text = ""
             self.login_view.anmeldung_rückmeldung_label.text = ""
         
-        logger.info("Logout erfolgreich, wechsle zur Login-Ansicht")
+        # Main-View Kalender zurücksetzen (falls vorhanden)
+        if self.main_view:
+            try:
+                # Kalender-Dropdown zurücksetzen und als "ungültig" markieren
+                if hasattr(self.main_view, 'month_calendar') and hasattr(self.main_view.month_calendar, 'employee_spinner'):
+                    spinner = self.main_view.month_calendar.employee_spinner
+                    spinner.text = ""
+                    spinner.values = []  # Auch values leeren, damit alte Werte nicht mehr gültig sind
+                
+                # Kalender-Anzeige leeren
+                if hasattr(self.main_view, 'calendar_label'):
+                    self.main_view.calendar_label.text = ""
+                
+                # Zeitstempel-Liste leeren
+                if hasattr(self.main_view.month_calendar, 'times_box'):
+                    self.main_view.month_calendar.times_box.clear_widgets()
+                    
+            except Exception as e:
+                logger.warning(f"Fehler beim Zurücksetzen der View-Elemente: {e}")
+        
+        logger.info("Logout erfolgreich, alle Daten zurückgesetzt, wechsle zur Login-Ansicht")
         
         # Zur Login-Seite wechseln
         self.change_view_login(None)
@@ -488,11 +523,23 @@ class Controller():
         spinner = self.main_view.month_calendar.employee_spinner
         spinner.values = self.model_track_time.mitarbeiter
         aktueller_name = self.model_track_time.aktueller_nutzer_name
+        
+        # WICHTIG: Spinner nur zurücksetzen, wenn keine gültige Auswahl vorhanden ist
+        # Erlaubt Vorgesetzten, andere Mitarbeiter auszuwählen
         if aktueller_name:
+            # Wenn Spinner leer ist ODER der aktuelle Text nicht in den verfügbaren Werten ist
+            # DANN auf aktuellen Nutzer zurücksetzen
             if not spinner.text or spinner.text not in spinner.values:
                 spinner.text = aktueller_name
                 self.model_track_time.aktuelle_kalendereinträge_für_name = aktueller_name
                 self.model_track_time.aktuelle_kalendereinträge_für_id = self.model_track_time.aktueller_nutzer_id
+            # Wenn eine gültige Auswahl existiert, Model synchronisieren
+            elif spinner.text != self.model_track_time.aktuelle_kalendereinträge_für_name:
+                self.model_track_time.aktuelle_kalendereinträge_für_name = spinner.text
+                self.model_track_time.get_id()  # ID aus Namen ableiten
+        else:
+            spinner.text = ""
+            
         # Kumulierte Gleitzeit auch in Stunden und Minuten umwandeln
         self.main_view.flexible_time_month.text = self._format_hours_minutes(self.model_track_time.kummulierte_gleitzeit_monat)
         self.main_view.flexible_time_quarter.text = self._format_hours_minutes(self.model_track_time.kummulierte_gleitzeit_quartal)
@@ -647,7 +694,10 @@ class Controller():
             # Arbeitszeitfenster für Minderjährige: JArbSchG § 14 (6-20 Uhr)
             self.model_track_time.checke_arbeitszeitfenster_minderjaehrige()  # Code 9
             
-            # === SCHRITT 6: Benachrichtigungs-Korrektur (Codes 3-9) ===
+            # Pausenzeiten prüfen: ArbZG § 4 / JArbSchG § 11 (Mindestpausen)
+            self.model_track_time.checke_pausenzeiten()  # Code 12
+            
+            # === SCHRITT 6: Benachrichtigungs-Korrektur (Codes 3-9, 12) ===
             # WICHTIG: MUSS VOR get_messages() aufgerufen werden!
             # Löscht Benachrichtigungen, deren Verstöße korrigiert wurden (z.B. Stempel nachgetragen)
             geloeschte = self.model_track_time.pruefe_und_korrigiere_arbeitszeitschutz_benachrichtigungen()
